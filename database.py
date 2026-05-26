@@ -1,0 +1,94 @@
+import os
+
+from supabase import Client, create_client
+
+
+def get_supabase_client() -> Client:
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_server_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv(
+        "SUPABASE_SECRET_KEY"
+    )
+
+    if not supabase_url or not supabase_server_key:
+        raise RuntimeError(
+            "Missing SUPABASE_URL and a SUPABASE_SECRET_KEY or "
+            "SUPABASE_SERVICE_ROLE_KEY environment variable."
+        )
+
+    return create_client(supabase_url, supabase_server_key)
+
+
+def get_user_profile(whatsapp_number: str) -> dict | None:
+    result = (
+        get_supabase_client()
+        .table("user_profiles")
+        .select("*")
+        .eq("whatsapp_number", whatsapp_number)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def save_user_profile(whatsapp_number: str, values: dict) -> dict:
+    payload = {"whatsapp_number": whatsapp_number, **values}
+    result = (
+        get_supabase_client()
+        .table("user_profiles")
+        .upsert(payload, on_conflict="whatsapp_number")
+        .execute()
+    )
+    return result.data[0]
+
+
+def get_ready_user_profiles() -> list[dict]:
+    result = (
+        get_supabase_client()
+        .table("user_profiles")
+        .select("*")
+        .eq("onboarding_state", "ready_for_resume")
+        .not_.is_("target_title", "null")
+        .not_.is_("experience_summary", "null")
+        .execute()
+    )
+    return result.data
+
+
+def get_sent_job_ids(whatsapp_number: str, job_ids: list[str]) -> set[str]:
+    if not job_ids:
+        return set()
+
+    result = (
+        get_supabase_client()
+        .table("sent_jobs")
+        .select("job_id")
+        .eq("whatsapp_number", whatsapp_number)
+        .in_("job_id", job_ids)
+        .execute()
+    )
+    return {row["job_id"] for row in result.data}
+
+
+def save_sent_job(
+    *,
+    whatsapp_number: str,
+    job_id: str,
+    job_title: str,
+    company_name: str,
+    job_url: str,
+    match_percentage: int,
+) -> None:
+    payload = {
+        "whatsapp_number": whatsapp_number,
+        "job_id": job_id,
+        "job_title": job_title,
+        "company_name": company_name,
+        "job_url": job_url,
+        "match_percentage": match_percentage,
+    }
+    (
+        get_supabase_client()
+        .table("sent_jobs")
+        .upsert(payload, on_conflict="whatsapp_number,job_id")
+        .execute()
+    )

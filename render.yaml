@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: ai-job-agent
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: APP_TIMEZONE
+        value: Asia/Kolkata
+      - key: META_GRAPH_API_VERSION
+        value: v25.0
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_FALLBACK_MODEL
+        value: gemini-2.5-flash-lite
+      - key: SCHEDULER_MAX_CONCURRENCY
+        value: "3"
