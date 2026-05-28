@@ -61,7 +61,7 @@ async def run_user_job_search(
     *,
     whatsapp_number: str,
     limit: int = 10,
-    threshold: int = 75,
+    threshold: int = 40,
     dry_run: bool = True,
     preferred_filters: bool = True,
     recent_days: int | None = 1,
