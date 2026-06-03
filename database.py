@@ -46,7 +46,7 @@ def get_ready_user_profiles() -> list[dict]:
         get_supabase_client()
         .table("user_profiles")
         .select("*")
-        .eq("onboarding_state", "ready_for_resume")
+        .in_("onboarding_state", ["ready_for_resume", "completed"])
         .not_.is_("target_title", "null")
         .not_.is_("experience_summary", "null")
         .execute()
