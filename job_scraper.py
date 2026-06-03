@@ -79,6 +79,24 @@ def _minimum_required_years(text: str) -> int | None:
 
 def _looks_entry_level(job: JobListing) -> bool:
     text = f"{job.title} {job.description}".lower()
+    title = job.title.lower()
+    senior_title_markers = [
+        "sde-ii",
+        "sde ii",
+        "sde 2",
+        "software development engineer ii",
+        "senior",
+        "sr.",
+        "sr ",
+        "principal",
+        "lead",
+        "manager",
+        "level 5",
+        "l5",
+    ]
+    if any(marker in title for marker in senior_title_markers):
+        return False
+
     minimum_years = _minimum_required_years(text)
     if minimum_years is not None:
         return minimum_years <= 2

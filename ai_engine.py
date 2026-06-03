@@ -1,4 +1,6 @@
+import json
 import os
+import re
 
 from google import genai
 from google.genai import types
@@ -10,8 +12,39 @@ class JobMatchEvaluation(BaseModel):
     match_percentage: int = Field(ge=0, le=100)
     matched_skills: list[str]
     missing_skills: list[str]
-    short_reason: str = Field(max_length=280)
+    short_reason: str
     should_alert: bool
+
+
+def _parse_evaluation_response(response: object) -> JobMatchEvaluation:
+    parsed = getattr(response, "parsed", None)
+    if parsed is not None:
+        return _normalize_evaluation(JobMatchEvaluation.model_validate(parsed))
+
+    text = (getattr(response, "text", None) or "").strip()
+    if not text:
+        raise RuntimeError("Gemini returned an empty job match evaluation.")
+
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text).strip()
+
+    try:
+        return _normalize_evaluation(JobMatchEvaluation.model_validate_json(text))
+    except Exception:
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+        if not match:
+            raise RuntimeError("Gemini did not return JSON for job match evaluation.")
+        return _normalize_evaluation(JobMatchEvaluation.model_validate(json.loads(match.group(0))))
+
+
+def _normalize_evaluation(evaluation: JobMatchEvaluation) -> JobMatchEvaluation:
+    if len(evaluation.short_reason) <= 280:
+        return evaluation
+
+    return evaluation.model_copy(
+        update={"short_reason": evaluation.short_reason[:277].rstrip() + "..."}
+    )
 
 
 def get_gemini_client() -> genai.Client:
@@ -75,7 +108,4 @@ Job description:
             config=config,
         )
 
-    if response.parsed is None:
-        raise RuntimeError("Gemini did not return a parsed job match evaluation.")
-
-    return JobMatchEvaluation.model_validate(response.parsed)
+    return _parse_evaluation_response(response)

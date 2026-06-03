@@ -21,7 +21,13 @@ class EvaluatedJob(BaseModel):
     location: str | None
     url: HttpUrl
     evaluation: JobMatchEvaluation
-    action: Literal["would_send", "sent", "skipped_low_match", "send_failed"]
+    action: Literal[
+        "would_send",
+        "sent",
+        "skipped_low_match",
+        "send_failed",
+        "evaluation_failed",
+    ]
     error: str | None = None
     tailored_resume_file: str | None = None
 
@@ -118,13 +124,35 @@ async def run_user_job_search(
     alert_count = 0
 
     for job in fresh_jobs:
-        evaluation = evaluate_job_match(
-            target_title=target_title,
-            experience_summary=experience_summary,
-            resume_text=profile.get("resume_text"),
-            job_title=job.title,
-            job_description=job.description,
-        )
+        try:
+            evaluation = evaluate_job_match(
+                target_title=target_title,
+                experience_summary=experience_summary,
+                resume_text=profile.get("resume_text"),
+                job_title=job.title,
+                job_description=job.description,
+            )
+        except Exception as exc:
+            logger.exception("Failed to evaluate job match for %s", job.job_id)
+            results.append(
+                EvaluatedJob(
+                    job_id=job.job_id,
+                    title=job.title,
+                    company=job.company,
+                    location=job.location,
+                    url=job.url,
+                    evaluation=JobMatchEvaluation(
+                        match_percentage=0,
+                        matched_skills=[],
+                        missing_skills=[],
+                        short_reason="Evaluation failed before a match score was produced.",
+                        should_alert=False,
+                    ),
+                    action="evaluation_failed",
+                    error=str(exc),
+                )
+            )
+            continue
 
         should_alert = evaluation.should_alert and evaluation.match_percentage >= threshold
         if not should_alert:
@@ -181,8 +209,8 @@ async def run_user_job_search(
                     job_id=job.job_id,
                     job_title=job.title,
                     company_name=job.company,
-                job_url=str(job.url),
-                match_percentage=evaluation.match_percentage,
+                    job_url=str(job.url),
+                    match_percentage=evaluation.match_percentage,
                 )
             except Exception as exc:
                 logger.exception("Failed to send job alert for %s", job.job_id)
