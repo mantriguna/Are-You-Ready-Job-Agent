@@ -62,6 +62,7 @@ async def run_scheduled_job_search(
     preferred_filters: bool = True,
     recent_days: int | None = 1,
     ignore_duplicates: bool = False,
+    use_template_alert: bool | None = None,
     send_no_results: bool | None = None,
 ) -> ScheduledRunResult:
     timezone_name, current_hour, profiles = get_profiles_for_current_hour(
@@ -71,6 +72,11 @@ async def run_scheduled_job_search(
     semaphore = asyncio.Semaphore(max_concurrency)
     runs: list[UserJobRunResult] = []
     errors: list[dict[str, str]] = []
+    should_use_template_alert = (
+        use_template_alert
+        if use_template_alert is not None
+        else os.getenv("USE_WHATSAPP_TEMPLATES", "true").lower() == "true"
+    )
 
     async def run_one(profile: dict) -> None:
         async with semaphore:
@@ -84,13 +90,14 @@ async def run_scheduled_job_search(
                     preferred_filters=preferred_filters,
                     recent_days=recent_days,
                     ignore_duplicates=ignore_duplicates,
+                    use_template_alert=should_use_template_alert,
                 )
                 runs.append(run_result)
 
                 should_send_no_results = (
                     send_no_results
                     if send_no_results is not None
-                    else os.getenv("SEND_NO_RESULT_SUMMARY", "true").lower() == "true"
+                    else os.getenv("SEND_NO_RESULT_SUMMARY", "false").lower() == "true"
                 )
                 if not dry_run and should_send_no_results and run_result.alert_count == 0:
                     await send_text_message(

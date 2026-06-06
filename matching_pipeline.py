@@ -8,7 +8,7 @@ from ai_engine import JobMatchEvaluation, evaluate_job_match
 from database import get_sent_job_ids, get_user_profile, save_sent_job
 from job_scraper import JobListing, fetch_jobs
 from resume_tailor import generate_tailored_resume_txt
-from whatsapp import send_document_message, send_text_message
+from whatsapp import send_document_message, send_template_message, send_text_message
 
 
 logger = logging.getLogger("ai-job-agent")
@@ -24,6 +24,7 @@ class EvaluatedJob(BaseModel):
     action: Literal[
         "would_send",
         "sent",
+        "sent_template",
         "skipped_low_match",
         "send_failed",
         "evaluation_failed",
@@ -98,6 +99,7 @@ async def run_user_job_search(
     preferred_filters: bool = True,
     recent_days: int | None = 1,
     ignore_duplicates: bool = False,
+    use_template_alert: bool = False,
 ) -> UserJobRunResult:
     profile = get_user_profile(whatsapp_number)
     if not profile:
@@ -188,7 +190,13 @@ async def run_user_job_search(
             continue
 
         alert_count += 1
-        action: Literal["would_send", "sent", "skipped_low_match", "send_failed"]
+        action: Literal[
+            "would_send",
+            "sent",
+            "sent_template",
+            "skipped_low_match",
+            "send_failed",
+        ]
         action = "would_send" if dry_run else "sent"
         error = None
         tailored_resume_path = None
@@ -206,7 +214,24 @@ async def run_user_job_search(
         if not dry_run:
             try:
                 alert_text = _format_job_alert(job, evaluation)
-                if tailored_resume_path:
+                if use_template_alert:
+                    await send_template_message(
+                        whatsapp_number=whatsapp_number,
+                        template_name=os.getenv(
+                            "WHATSAPP_JOB_TEMPLATE_NAME", "job_match_alert"
+                        ),
+                        language_code=os.getenv(
+                            "WHATSAPP_TEMPLATE_LANGUAGE", "en_US"
+                        ),
+                        body_parameters=[
+                            job.title,
+                            job.company,
+                            f"{evaluation.match_percentage}%",
+                            str(job.url),
+                        ],
+                    )
+                    action = "sent_template"
+                elif tailored_resume_path:
                     document_url = _public_resume_url(tailored_resume_path.name)
                     if document_url:
                         await send_document_message(
