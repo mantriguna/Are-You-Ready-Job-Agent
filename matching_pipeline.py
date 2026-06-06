@@ -37,6 +37,7 @@ class UserJobRunResult(BaseModel):
     query: str
     search_queries: list[str]
     recent_days: int | None
+    ignore_duplicates: bool
     scraped_count: int
     duplicate_count: int
     evaluated_count: int
@@ -96,6 +97,7 @@ async def run_user_job_search(
     dry_run: bool = True,
     preferred_filters: bool = True,
     recent_days: int | None = 1,
+    ignore_duplicates: bool = False,
 ) -> UserJobRunResult:
     profile = get_user_profile(whatsapp_number)
     if not profile:
@@ -130,7 +132,11 @@ async def run_user_job_search(
 
     job_ids = [job.job_id for job in scraped.jobs]
     duplicate_ids = get_sent_job_ids(whatsapp_number, job_ids)
-    fresh_jobs = [job for job in scraped.jobs if job.job_id not in duplicate_ids]
+    fresh_jobs = (
+        scraped.jobs
+        if ignore_duplicates
+        else [job for job in scraped.jobs if job.job_id not in duplicate_ids]
+    )
 
     results: list[EvaluatedJob] = []
     alert_count = 0
@@ -248,6 +254,7 @@ async def run_user_job_search(
         query=target_title,
         search_queries=search_queries,
         recent_days=recent_days,
+        ignore_duplicates=ignore_duplicates,
         scraped_count=scraped.job_count,
         duplicate_count=len(duplicate_ids),
         evaluated_count=len(fresh_jobs),

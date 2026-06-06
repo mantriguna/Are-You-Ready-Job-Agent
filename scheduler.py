@@ -61,6 +61,7 @@ async def run_scheduled_job_search(
     override_hour: int | None = None,
     preferred_filters: bool = True,
     recent_days: int | None = 1,
+    ignore_duplicates: bool = False,
     send_no_results: bool | None = None,
 ) -> ScheduledRunResult:
     timezone_name, current_hour, profiles = get_profiles_for_current_hour(
@@ -82,6 +83,7 @@ async def run_scheduled_job_search(
                     dry_run=dry_run,
                     preferred_filters=preferred_filters,
                     recent_days=recent_days,
+                    ignore_duplicates=ignore_duplicates,
                 )
                 runs.append(run_result)
 
