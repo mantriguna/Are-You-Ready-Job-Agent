@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from database import get_ready_user_profiles
 from matching_pipeline import UserJobRunResult, run_user_job_search
+from whatsapp import send_text_message
 
 
 class ScheduledRunResult(BaseModel):
@@ -58,6 +59,9 @@ async def run_scheduled_job_search(
     limit: int = 5,
     threshold: int = 75,
     override_hour: int | None = None,
+    preferred_filters: bool = True,
+    recent_days: int | None = 1,
+    send_no_results: bool | None = None,
 ) -> ScheduledRunResult:
     timezone_name, current_hour, profiles = get_profiles_for_current_hour(
         override_hour=override_hour
@@ -71,14 +75,29 @@ async def run_scheduled_job_search(
         async with semaphore:
             whatsapp_number = profile["whatsapp_number"]
             try:
-                runs.append(
-                    await run_user_job_search(
-                        whatsapp_number=whatsapp_number,
-                        limit=limit,
-                        threshold=threshold,
-                        dry_run=dry_run,
-                    )
+                run_result = await run_user_job_search(
+                    whatsapp_number=whatsapp_number,
+                    limit=limit,
+                    threshold=threshold,
+                    dry_run=dry_run,
+                    preferred_filters=preferred_filters,
+                    recent_days=recent_days,
                 )
+                runs.append(run_result)
+
+                should_send_no_results = (
+                    send_no_results
+                    if send_no_results is not None
+                    else os.getenv("SEND_NO_RESULT_SUMMARY", "true").lower() == "true"
+                )
+                if not dry_run and should_send_no_results and run_result.alert_count == 0:
+                    await send_text_message(
+                        whatsapp_number,
+                        (
+                            "Job search completed for today: no India 0-2 years "
+                            "1 lakh+/month matches passed the filter. I will check again at 8 PM tomorrow."
+                        ),
+                    )
             except Exception as exc:
                 errors.append(
                     {"whatsapp_number": whatsapp_number, "error": str(exc)}

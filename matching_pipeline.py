@@ -35,6 +35,8 @@ class EvaluatedJob(BaseModel):
 class UserJobRunResult(BaseModel):
     whatsapp_number: str
     query: str
+    search_queries: list[str]
+    recent_days: int | None
     scraped_count: int
     duplicate_count: int
     evaluated_count: int
@@ -63,6 +65,29 @@ def _public_resume_url(resume_file: str) -> str | None:
     return f"{base_url.rstrip('/')}/generated-resumes/{resume_file}"
 
 
+def _build_search_queries(target_title: str) -> list[str]:
+    configured_queries = os.getenv(
+        "PREFERRED_JOB_QUERIES",
+        "Software Development Engineer,SDE-1,SDE I,Backend Engineer,Python Developer,Java Developer",
+    )
+    candidates = [
+        query.strip()
+        for value in [target_title, configured_queries]
+        for query in value.split(",")
+        if query.strip()
+    ]
+
+    search_queries: list[str] = []
+    seen: set[str] = set()
+    for query in candidates:
+        normalized = query.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        search_queries.append(query)
+    return search_queries
+
+
 async def run_user_job_search(
     *,
     whatsapp_number: str,
@@ -81,41 +106,28 @@ async def run_user_job_search(
     if not target_title or not experience_summary:
         raise ValueError("WhatsApp profile is incomplete.")
 
-    scraped = await fetch_jobs(
-        query=target_title,
-        location="India",
-        limit=limit,
-        preferred_filters=preferred_filters,
-        recent_days=recent_days,
-    )
-    if scraped.job_count == 0 and " " in target_title:
-        fallback_query = target_title.split()[0]
+    search_queries = _build_search_queries(target_title)
+    scraped = None
+    for search_query in search_queries:
         scraped = await fetch_jobs(
-            query=fallback_query,
+            query=search_query,
             location="India",
             limit=limit,
             preferred_filters=preferred_filters,
             recent_days=recent_days,
         )
-    if scraped.job_count == 0 and preferred_filters:
-        preferred_queries = [
-            query.strip()
-            for query in os.getenv(
-                "PREFERRED_JOB_QUERIES",
-                "SDE-1,Software Development Engineer,Backend Engineer",
-            ).split(",")
-            if query.strip()
-        ]
-        for preferred_query in preferred_queries:
-            scraped = await fetch_jobs(
-                query=preferred_query,
-                location="India",
-                limit=limit,
-                preferred_filters=preferred_filters,
-                recent_days=recent_days,
-            )
-            if scraped.job_count:
-                break
+        if scraped.job_count:
+            break
+
+    if scraped is None:
+        scraped = await fetch_jobs(
+            query=target_title,
+            location="India",
+            limit=limit,
+            preferred_filters=preferred_filters,
+            recent_days=recent_days,
+        )
+
     job_ids = [job.job_id for job in scraped.jobs]
     duplicate_ids = get_sent_job_ids(whatsapp_number, job_ids)
     fresh_jobs = [job for job in scraped.jobs if job.job_id not in duplicate_ids]
@@ -234,6 +246,8 @@ async def run_user_job_search(
     return UserJobRunResult(
         whatsapp_number=whatsapp_number,
         query=target_title,
+        search_queries=search_queries,
+        recent_days=recent_days,
         scraped_count=scraped.job_count,
         duplicate_count=len(duplicate_ids),
         evaluated_count=len(fresh_jobs),

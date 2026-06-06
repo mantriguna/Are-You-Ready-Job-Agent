@@ -108,6 +108,7 @@ async def run_jobs_for_user(
     threshold: int = Query(75, ge=0, le=100),
     dry_run: bool = True,
     preferred_filters: bool = True,
+    recent_days: int | None = Query(1, ge=0, le=30),
 ):
     try:
         return await run_user_job_search(
@@ -116,6 +117,7 @@ async def run_jobs_for_user(
             threshold=threshold,
             dry_run=dry_run,
             preferred_filters=preferred_filters,
+            recent_days=recent_days,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -128,6 +130,9 @@ async def execute_daily_search(
     limit: int = Query(5, ge=1, le=25),
     threshold: int = Query(75, ge=0, le=100),
     override_hour: int | None = Query(None, ge=0, le=23),
+    preferred_filters: bool = True,
+    recent_days: int | None = Query(1, ge=0, le=30),
+    send_no_results: bool | None = None,
 ):
     cron_secret = os.getenv("CRON_SECRET")
     if cron_secret and token != cron_secret:
@@ -138,4 +143,7 @@ async def execute_daily_search(
         limit=limit,
         threshold=threshold,
         override_hour=override_hour,
+        preferred_filters=preferred_filters,
+        recent_days=recent_days,
+        send_no_results=send_no_results,
     )
