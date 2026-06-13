@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
-from database import get_ready_user_profiles
+from database import cleanup_old_sent_jobs, get_ready_user_profiles
 from matching_pipeline import UserJobRunResult, run_user_job_search
 from whatsapp import send_text_message
 
@@ -77,6 +77,8 @@ async def run_scheduled_job_search(
         if use_template_alert is not None
         else os.getenv("USE_WHATSAPP_TEMPLATES", "true").lower() == "true"
     )
+    cleanup_days = int(os.getenv("SENT_JOB_RETENTION_DAYS", "60"))
+    cleanup_old_sent_jobs(cleanup_days)
 
     async def run_one(profile: dict) -> None:
         async with semaphore:

@@ -1,5 +1,5 @@
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from supabase import Client, create_client
 
@@ -68,6 +68,17 @@ def get_sent_job_ids(whatsapp_number: str, job_ids: list[str]) -> set[str]:
         .execute()
     )
     return {row["job_id"] for row in result.data}
+
+
+def cleanup_old_sent_jobs(days: int = 60) -> None:
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    (
+        get_supabase_client()
+        .table("sent_jobs")
+        .delete()
+        .lt("sent_at", cutoff.isoformat())
+        .execute()
+    )
 
 
 def save_sent_job(
