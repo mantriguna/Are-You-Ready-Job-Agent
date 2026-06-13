@@ -1,4 +1,5 @@
 import os
+from datetime import UTC, datetime
 
 from supabase import Client, create_client
 
@@ -92,3 +93,46 @@ def save_sent_job(
         .upsert(payload, on_conflict="whatsapp_number,job_id")
         .execute()
     )
+
+
+def replace_latest_job_alerts(whatsapp_number: str, jobs: list[dict]) -> None:
+    supabase = get_supabase_client()
+    supabase.table("latest_job_alerts").delete().eq(
+        "whatsapp_number", whatsapp_number
+    ).execute()
+
+    if not jobs:
+        return
+
+    now = datetime.now(UTC).isoformat()
+    payload = [
+        {
+            "whatsapp_number": whatsapp_number,
+            "job_number": job["job_number"],
+            "job_id": job["job_id"],
+            "title": job["title"],
+            "company": job["company"],
+            "location": job.get("location"),
+            "job_url": job["job_url"],
+            "description": job.get("description", ""),
+            "match_percentage": job.get("match_percentage"),
+            "evaluation": job.get("evaluation", {}),
+            "resume_file": job.get("resume_file"),
+            "created_at": now,
+        }
+        for job in jobs
+    ]
+    supabase.table("latest_job_alerts").insert(payload).execute()
+
+
+def get_latest_job_alert(whatsapp_number: str, job_number: int) -> dict | None:
+    result = (
+        get_supabase_client()
+        .table("latest_job_alerts")
+        .select("*")
+        .eq("whatsapp_number", whatsapp_number)
+        .eq("job_number", job_number)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None

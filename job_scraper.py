@@ -285,6 +285,62 @@ async def _fetch_amazon_jobs(
     return jobs
 
 
+async def _fetch_rapidapi_jobs(
+    client: httpx.AsyncClient,
+    query: str | None,
+    limit: int,
+) -> list[JobListing]:
+    rapidapi_key = os.getenv("RAPIDAPI_KEY")
+    if not rapidapi_key:
+        return []
+
+    host = os.getenv("RAPIDAPI_JOBS_HOST", "jsearch.p.rapidapi.com")
+    response = await client.get(
+        f"https://{host}/search",
+        params={
+            "query": f"{query or 'software development engineer'} in India",
+            "page": "1",
+            "num_pages": "1",
+            "date_posted": "today",
+            "employment_types": "FULLTIME,CONTRACTOR",
+        },
+        headers={
+            "X-RapidAPI-Key": rapidapi_key,
+            "X-RapidAPI-Host": host,
+        },
+    )
+    response.raise_for_status()
+    payload = response.json()
+
+    jobs: list[JobListing] = []
+    for item in payload.get("data", [])[:limit]:
+        job_id = item.get("job_id") or item.get("job_apply_link") or item.get("job_title")
+        apply_url = item.get("job_apply_link") or item.get("job_google_link")
+        if not job_id or not apply_url:
+            continue
+
+        posted_at = None
+        posted_timestamp = item.get("job_posted_at_timestamp")
+        if isinstance(posted_timestamp, int):
+            posted_at = datetime.fromtimestamp(posted_timestamp, tz=UTC)
+
+        jobs.append(
+            JobListing(
+                job_id=f"rapidapi:{job_id}",
+                title=item.get("job_title", "Untitled job"),
+                company=item.get("employer_name", "Unknown company"),
+                location=item.get("job_location"),
+                description=_clean_html(item.get("job_description")),
+                url=apply_url,
+                source=item.get("job_publisher") or "rapidapi",
+                posted_at=posted_at,
+                employment_type=item.get("job_employment_type"),
+                salary_text=item.get("job_salary"),
+            )
+        )
+    return jobs
+
+
 async def fetch_jobs(
     *,
     query: str | None = None,
@@ -298,13 +354,18 @@ async def fetch_jobs(
     ashby_boards = _csv_env("ASHBY_BOARD_NAMES")
 
     include_amazon = os.getenv("ENABLE_AMAZON_JOBS", "true").lower() == "true"
+    include_rapidapi = bool(os.getenv("RAPIDAPI_KEY"))
     source_count = len(greenhouse_boards) + len(lever_companies) + len(ashby_boards)
     if include_amazon:
+        source_count += 1
+    if include_rapidapi:
         source_count += 1
     tasks = []
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         if include_amazon:
             tasks.append(_fetch_amazon_jobs(client, query=query, limit=limit))
+        if include_rapidapi:
+            tasks.append(_fetch_rapidapi_jobs(client, query=query, limit=limit))
         tasks.extend(_fetch_greenhouse_board(client, board) for board in greenhouse_boards)
         tasks.extend(_fetch_lever_board(client, slug) for slug in lever_companies)
         tasks.extend(_fetch_ashby_board(client, board) for board in ashby_boards)

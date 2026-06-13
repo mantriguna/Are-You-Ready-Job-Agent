@@ -1,17 +1,21 @@
 import logging
 import os
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 from ai_engine import JobMatchEvaluation, evaluate_job_match
+from chat_handler import build_chat_reply
 from database import get_supabase_client, get_user_profile, save_user_profile
 from job_scraper import JobSearchResult, fetch_jobs
 from matching_pipeline import UserJobRunResult, run_user_job_search
-from onboarding import build_onboarding_step
-from scheduler import ScheduledRunResult, run_scheduled_job_search
+from scheduler import (
+    ScheduledRunResult,
+    get_profiles_for_current_hour,
+    run_scheduled_job_search,
+)
 from whatsapp import extract_text_messages, send_text_message
 
 
@@ -24,6 +28,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ai-job-agent")
 
 VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "MySuperSecretToken123")
+WHATSAPP_TEXT_CHUNK_SIZE = 3500
 
 
 class JobMatchRequest(BaseModel):
@@ -55,9 +60,14 @@ async def receive_whatsapp_message(request: Request):
 
     for message in extract_text_messages(payload):
         profile = get_user_profile(message.whatsapp_number)
-        onboarding_step = build_onboarding_step(profile, message.text)
-        save_user_profile(message.whatsapp_number, onboarding_step.profile_updates)
-        await send_text_message(message.whatsapp_number, onboarding_step.reply)
+        chat_step = build_chat_reply(profile, message.text)
+        if chat_step.profile_updates:
+            save_user_profile(message.whatsapp_number, chat_step.profile_updates)
+        for start in range(0, len(chat_step.reply), WHATSAPP_TEXT_CHUNK_SIZE):
+            await send_text_message(
+                message.whatsapp_number,
+                chat_step.reply[start : start + WHATSAPP_TEXT_CHUNK_SIZE],
+            )
 
     return {"status": "SUCCESS"}
 
@@ -104,7 +114,7 @@ async def search_jobs(
 @app.post("/jobs/run-user/{whatsapp_number}", response_model=UserJobRunResult)
 async def run_jobs_for_user(
     whatsapp_number: str,
-    limit: int = Query(5, ge=1, le=25),
+    limit: int = Query(15, ge=1, le=15),
     threshold: int = Query(75, ge=0, le=100),
     dry_run: bool = True,
     preferred_filters: bool = True,
@@ -129,9 +139,10 @@ async def run_jobs_for_user(
 
 @app.api_route("/execute-daily-search", methods=["GET", "POST"], response_model=ScheduledRunResult)
 async def execute_daily_search(
+    background_tasks: BackgroundTasks,
     token: str | None = None,
     dry_run: bool = False,
-    limit: int = Query(5, ge=1, le=25),
+    limit: int = Query(15, ge=1, le=15),
     threshold: int = Query(75, ge=0, le=100),
     override_hour: int | None = Query(None, ge=0, le=23),
     preferred_filters: bool = True,
@@ -139,10 +150,36 @@ async def execute_daily_search(
     ignore_duplicates: bool = False,
     use_template_alert: bool | None = None,
     send_no_results: bool | None = None,
+    background: bool = False,
 ):
     cron_secret = os.getenv("CRON_SECRET")
     if cron_secret and token != cron_secret:
         raise HTTPException(status_code=403, detail="Invalid cron token.")
+
+    if background:
+        timezone_name, current_hour, profiles = get_profiles_for_current_hour(
+            override_hour=override_hour
+        )
+        background_tasks.add_task(
+            run_scheduled_job_search,
+            dry_run=dry_run,
+            limit=limit,
+            threshold=threshold,
+            override_hour=override_hour,
+            preferred_filters=preferred_filters,
+            recent_days=recent_days,
+            ignore_duplicates=ignore_duplicates,
+            use_template_alert=use_template_alert,
+            send_no_results=send_no_results,
+        )
+        return ScheduledRunResult(
+            timezone=timezone_name,
+            current_hour=current_hour,
+            matched_profile_count=len(profiles),
+            dry_run=dry_run,
+            runs=[],
+            errors=[],
+        )
 
     return await run_scheduled_job_search(
         dry_run=dry_run,

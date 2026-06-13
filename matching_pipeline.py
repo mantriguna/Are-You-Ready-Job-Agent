@@ -5,8 +5,13 @@ from typing import Literal
 from pydantic import BaseModel, HttpUrl
 
 from ai_engine import JobMatchEvaluation, evaluate_job_match
-from database import get_sent_job_ids, get_user_profile, save_sent_job
-from job_scraper import JobListing, fetch_jobs
+from database import (
+    get_sent_job_ids,
+    get_user_profile,
+    replace_latest_job_alerts,
+    save_sent_job,
+)
+from job_scraper import JobListing, JobSearchResult, fetch_jobs
 from resume_tailor import generate_tailored_resume_txt
 from whatsapp import send_document_message, send_template_message, send_text_message
 
@@ -31,6 +36,7 @@ class EvaluatedJob(BaseModel):
     ]
     error: str | None = None
     tailored_resume_file: str | None = None
+    job_number: int | None = None
 
 
 class UserJobRunResult(BaseModel):
@@ -47,11 +53,14 @@ class UserJobRunResult(BaseModel):
     results: list[EvaluatedJob]
 
 
-def _format_job_alert(job: JobListing, evaluation: JobMatchEvaluation) -> str:
+def _format_job_alert(
+    job: JobListing, evaluation: JobMatchEvaluation, job_number: int | None = None
+) -> str:
     location = f"\nLocation: {job.location}" if job.location else ""
     skills = ", ".join(evaluation.matched_skills[:6]) or "Relevant profile match"
+    prefix = f"Job {job_number}: " if job_number else "Job match: "
     return (
-        f"Job match: {job.title}\n"
+        f"{prefix}{job.title}\n"
         f"Company: {job.company}{location}\n"
         f"Match: {evaluation.match_percentage}%\n"
         f"Why: {evaluation.short_reason}\n"
@@ -111,26 +120,45 @@ async def run_user_job_search(
         raise ValueError("WhatsApp profile is incomplete.")
 
     search_queries = _build_search_queries(target_title)
-    scraped = None
+    evaluation_pool_limit = int(os.getenv("JOB_EVALUATION_POOL_LIMIT", str(max(limit, 15))))
+    scraped_jobs: list[JobListing] = []
+    seen_job_ids: set[str] = set()
+    source_count = 0
     for search_query in search_queries:
-        scraped = await fetch_jobs(
+        query_result = await fetch_jobs(
             query=search_query,
             location="India",
-            limit=limit,
+            limit=evaluation_pool_limit,
             preferred_filters=preferred_filters,
             recent_days=recent_days,
         )
-        if scraped.job_count:
+        source_count = max(source_count, query_result.source_count)
+        for job in query_result.jobs:
+            if job.job_id in seen_job_ids:
+                continue
+            seen_job_ids.add(job.job_id)
+            scraped_jobs.append(job)
+        if len(scraped_jobs) >= evaluation_pool_limit:
             break
 
-    if scraped is None:
-        scraped = await fetch_jobs(
+    if not scraped_jobs:
+        query_result = await fetch_jobs(
             query=target_title,
             location="India",
-            limit=limit,
+            limit=evaluation_pool_limit,
             preferred_filters=preferred_filters,
             recent_days=recent_days,
         )
+        source_count = max(source_count, query_result.source_count)
+        scraped_jobs = query_result.jobs
+
+    scraped = JobSearchResult(
+        query=target_title,
+        location="India",
+        source_count=source_count,
+        job_count=len(scraped_jobs),
+        jobs=scraped_jobs[:evaluation_pool_limit],
+    )
 
     job_ids = [job.job_id for job in scraped.jobs]
     duplicate_ids = get_sent_job_ids(whatsapp_number, job_ids)
@@ -141,7 +169,7 @@ async def run_user_job_search(
     )
 
     results: list[EvaluatedJob] = []
-    alert_count = 0
+    alert_candidates: list[tuple[JobListing, JobMatchEvaluation]] = []
 
     for job in fresh_jobs:
         try:
@@ -189,14 +217,20 @@ async def run_user_job_search(
             )
             continue
 
-        alert_count += 1
-        action: Literal[
-            "would_send",
-            "sent",
-            "sent_template",
-            "skipped_low_match",
-            "send_failed",
-        ]
+        alert_candidates.append((job, evaluation))
+
+    alert_candidates.sort(
+        key=lambda item: (
+            item[0].company.lower() != "amazon",
+            -item[1].match_percentage,
+            item[0].title.lower(),
+        )
+    )
+    selected_alerts = alert_candidates[:limit]
+    latest_alerts: list[dict] = []
+
+    for job_number, (job, evaluation) in enumerate(selected_alerts, start=1):
+        action: Literal["would_send", "sent", "sent_template", "send_failed"]
         action = "would_send" if dry_run else "sent"
         error = None
         tailored_resume_path = None
@@ -213,7 +247,7 @@ async def run_user_job_search(
 
         if not dry_run:
             try:
-                alert_text = _format_job_alert(job, evaluation)
+                alert_text = _format_job_alert(job, evaluation, job_number)
                 if use_template_alert:
                     await send_template_message(
                         whatsapp_number=whatsapp_number,
@@ -224,7 +258,7 @@ async def run_user_job_search(
                             "WHATSAPP_TEMPLATE_LANGUAGE", "en_US"
                         ),
                         body_parameters=[
-                            job.title,
+                            f"Job {job_number}: {job.title}",
                             job.company,
                             f"{evaluation.match_percentage}%",
                             str(job.url),
@@ -260,6 +294,20 @@ async def run_user_job_search(
                 action = "send_failed"
                 error = str(exc)
 
+        latest_alerts.append(
+            {
+                "job_number": job_number,
+                "job_id": job.job_id,
+                "title": job.title,
+                "company": job.company,
+                "location": job.location,
+                "job_url": str(job.url),
+                "description": job.description,
+                "match_percentage": evaluation.match_percentage,
+                "evaluation": evaluation.model_dump(),
+                "resume_file": str(tailored_resume_path) if tailored_resume_path else None,
+            }
+        )
         results.append(
             EvaluatedJob(
                 job_id=job.job_id,
@@ -271,8 +319,15 @@ async def run_user_job_search(
                 action=action,
                 error=error,
                 tailored_resume_file=str(tailored_resume_path) if tailored_resume_path else None,
+                job_number=job_number,
             )
         )
+
+    if not dry_run:
+        try:
+            replace_latest_job_alerts(whatsapp_number, latest_alerts)
+        except Exception:
+            logger.exception("Failed to save latest numbered job alerts.")
 
     return UserJobRunResult(
         whatsapp_number=whatsapp_number,
@@ -283,7 +338,7 @@ async def run_user_job_search(
         scraped_count=scraped.job_count,
         duplicate_count=len(duplicate_ids),
         evaluated_count=len(fresh_jobs),
-        alert_count=alert_count,
+        alert_count=len(selected_alerts),
         dry_run=dry_run,
         results=results,
     )
