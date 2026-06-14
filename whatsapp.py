@@ -11,6 +11,17 @@ class IncomingTextMessage:
     text: str
 
 
+def _raise_for_meta_error(response: httpx.Response) -> None:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        try:
+            detail = response.json()
+        except ValueError:
+            detail = response.text
+        raise RuntimeError(f"Meta WhatsApp API error: {detail}") from exc
+
+
 def extract_text_messages(payload: dict) -> list[IncomingTextMessage]:
     incoming_messages: list[IncomingTextMessage] = []
 
@@ -56,7 +67,7 @@ async def send_text_message(whatsapp_number: str, body: str) -> dict:
 
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.post(url, json=payload, headers=headers)
-        response.raise_for_status()
+        _raise_for_meta_error(response)
         return response.json()
 
 
@@ -98,7 +109,7 @@ async def send_template_message(
 
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.post(url, json=payload, headers=headers)
-        response.raise_for_status()
+        _raise_for_meta_error(response)
         return response.json()
 
 
@@ -132,5 +143,5 @@ async def send_document_message(
 
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.post(url, json=payload, headers=headers)
-        response.raise_for_status()
+        _raise_for_meta_error(response)
         return response.json()
