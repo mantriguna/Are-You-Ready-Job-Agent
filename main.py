@@ -16,7 +16,7 @@ from scheduler import (
     get_profiles_for_current_hour,
     run_scheduled_job_search,
 )
-from whatsapp import extract_text_messages, send_text_message
+from whatsapp import extract_text_messages, send_template_message, send_text_message
 
 
 load_dotenv()
@@ -82,6 +82,29 @@ async def database_health_check():
     supabase = get_supabase_client()
     result = supabase.table("user_profiles").select("whatsapp_number").limit(1).execute()
     return {"status": "database connected", "sample_count": len(result.data)}
+
+
+@app.get("/test/job-template")
+async def test_job_template(
+    token: str | None = None,
+    whatsapp_number: str = "918790431602",
+):
+    cron_secret = os.getenv("CRON_SECRET")
+    if cron_secret and token != cron_secret:
+        raise HTTPException(status_code=403, detail="Invalid test token.")
+
+    result = await send_template_message(
+        whatsapp_number=whatsapp_number,
+        template_name=os.getenv("WHATSAPP_JOB_TEMPLATE_NAME", "job_match_alert"),
+        language_code=os.getenv("WHATSAPP_TEMPLATE_LANGUAGE", "en_US"),
+        body_parameters=[
+            "Job 1: SDE-1 Contractual",
+            "Amazon",
+            "92%",
+            "https://www.amazon.jobs/en/jobs/10428417/sde-1-contractual",
+        ],
+    )
+    return {"status": "template accepted by Meta", "meta_response": result}
 
 
 @app.post("/ai/evaluate-job", response_model=JobMatchEvaluation)
