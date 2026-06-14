@@ -37,6 +37,14 @@ class JobMatchRequest(BaseModel):
     job_description: str = Field(min_length=1)
 
 
+def _mask_secret(value: str | None) -> str | None:
+    if not value:
+        return None
+    if len(value) <= 10:
+        return "***"
+    return f"{value[:6]}...{value[-4:]}"
+
+
 @app.get("/webhook")
 async def verify_webhook(
     hub_mode: str | None = Query(None, alias="hub.mode"),
@@ -84,6 +92,23 @@ async def database_health_check():
     return {"status": "database connected", "sample_count": len(result.data)}
 
 
+@app.get("/health/meta")
+async def meta_health_check(token: str | None = None):
+    cron_secret = os.getenv("CRON_SECRET")
+    if cron_secret and token != cron_secret:
+        raise HTTPException(status_code=403, detail="Invalid health token.")
+
+    return {
+        "meta_access_token_present": bool(os.getenv("META_ACCESS_TOKEN")),
+        "meta_access_token_preview": _mask_secret(os.getenv("META_ACCESS_TOKEN")),
+        "meta_phone_number_id": os.getenv("META_PHONE_NUMBER_ID"),
+        "meta_waba_id": os.getenv("META_WABA_ID"),
+        "meta_graph_api_version": os.getenv("META_GRAPH_API_VERSION", "v25.0"),
+        "template_name": os.getenv("WHATSAPP_JOB_TEMPLATE_NAME", "job_match_alert"),
+        "template_language": os.getenv("WHATSAPP_TEMPLATE_LANGUAGE", "en_US"),
+    }
+
+
 @app.get("/test/job-template")
 async def test_job_template(
     token: str | None = None,
@@ -93,17 +118,21 @@ async def test_job_template(
     if cron_secret and token != cron_secret:
         raise HTTPException(status_code=403, detail="Invalid test token.")
 
-    result = await send_template_message(
-        whatsapp_number=whatsapp_number,
-        template_name=os.getenv("WHATSAPP_JOB_TEMPLATE_NAME", "job_match_alert"),
-        language_code=os.getenv("WHATSAPP_TEMPLATE_LANGUAGE", "en_US"),
-        body_parameters=[
-            "Job 1: SDE-1 Contractual",
-            "Amazon",
-            "92%",
-            "https://www.amazon.jobs/en/jobs/10428417/sde-1-contractual",
-        ],
-    )
+    try:
+        result = await send_template_message(
+            whatsapp_number=whatsapp_number,
+            template_name=os.getenv("WHATSAPP_JOB_TEMPLATE_NAME", "job_match_alert"),
+            language_code=os.getenv("WHATSAPP_TEMPLATE_LANGUAGE", "en_US"),
+            body_parameters=[
+                "Job 1: SDE-1 Contractual",
+                "Amazon",
+                "92%",
+                "https://www.amazon.jobs/en/jobs/10428417/sde-1-contractual",
+            ],
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     return {"status": "template accepted by Meta", "meta_response": result}
 
 
