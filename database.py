@@ -147,3 +147,61 @@ def get_latest_job_alert(whatsapp_number: str, job_number: int) -> dict | None:
         .execute()
     )
     return result.data[0] if result.data else None
+
+
+def create_cron_run(
+    *,
+    timezone: str,
+    current_hour: int,
+    matched_profile_count: int,
+    dry_run: bool,
+) -> int | None:
+    payload = {
+        "timezone": timezone,
+        "current_hour": current_hour,
+        "matched_profile_count": matched_profile_count,
+        "dry_run": dry_run,
+        "status": "running",
+    }
+    result = get_supabase_client().table("cron_runs").insert(payload).execute()
+    return result.data[0]["id"] if result.data else None
+
+
+def finish_cron_run(
+    run_id: int | None,
+    *,
+    status: str,
+    jobs_scraped: int,
+    jobs_sent: int,
+    errors: list[dict[str, str]],
+) -> None:
+    if run_id is None:
+        return
+    payload = {
+        "finished_at": datetime.now(UTC).isoformat(),
+        "status": status,
+        "jobs_scraped": jobs_scraped,
+        "jobs_sent": jobs_sent,
+        "errors": errors,
+    }
+    get_supabase_client().table("cron_runs").update(payload).eq("id", run_id).execute()
+
+
+def get_admin_status() -> dict:
+    supabase = get_supabase_client()
+    profiles = supabase.table("user_profiles").select("whatsapp_number", count="exact").execute()
+    sent_jobs = supabase.table("sent_jobs").select("job_id", count="exact").execute()
+    latest_jobs = supabase.table("latest_job_alerts").select("job_id", count="exact").execute()
+    runs = (
+        supabase.table("cron_runs")
+        .select("*")
+        .order("started_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return {
+        "profile_count": profiles.count or 0,
+        "sent_job_count": sent_jobs.count or 0,
+        "latest_job_alert_count": latest_jobs.count or 0,
+        "last_cron_run": runs.data[0] if runs.data else None,
+    }

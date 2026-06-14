@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
@@ -8,7 +9,12 @@ from pydantic import BaseModel, Field
 
 from ai_engine import JobMatchEvaluation, evaluate_job_match
 from chat_handler import build_chat_reply
-from database import get_supabase_client, get_user_profile, save_user_profile
+from database import (
+    get_admin_status,
+    get_supabase_client,
+    get_user_profile,
+    save_user_profile,
+)
 from job_scraper import JobSearchResult, fetch_jobs
 from matching_pipeline import UserJobRunResult, run_user_job_search
 from scheduler import (
@@ -16,7 +22,12 @@ from scheduler import (
     get_profiles_for_current_hour,
     run_scheduled_job_search,
 )
-from whatsapp import extract_text_messages, send_template_message, send_text_message
+from whatsapp import (
+    extract_text_messages,
+    send_document_message,
+    send_template_message,
+    send_text_message,
+)
 
 
 load_dotenv()
@@ -45,6 +56,16 @@ def _mask_secret(value: str | None) -> str | None:
     return f"{value[:6]}...{value[-4:]}"
 
 
+def _public_generated_file_url(path: str | None) -> str | None:
+    if not path:
+        return None
+    base_url = os.getenv("PUBLIC_BASE_URL")
+    if not base_url:
+        return None
+    filename = Path(path).name
+    return f"{base_url.rstrip('/')}/generated-resumes/{filename}"
+
+
 @app.get("/webhook")
 async def verify_webhook(
     hub_mode: str | None = Query(None, alias="hub.mode"),
@@ -71,6 +92,15 @@ async def receive_whatsapp_message(request: Request):
         chat_step = build_chat_reply(profile, message.text)
         if chat_step.profile_updates:
             save_user_profile(message.whatsapp_number, chat_step.profile_updates)
+        document_url = _public_generated_file_url(chat_step.document_path)
+        if document_url:
+            await send_document_message(
+                whatsapp_number=message.whatsapp_number,
+                document_url=document_url,
+                filename=Path(chat_step.document_path or "tailored_resume.txt").name,
+                caption=chat_step.reply[:1024],
+            )
+            continue
         for start in range(0, len(chat_step.reply), WHATSAPP_TEXT_CHUNK_SIZE):
             await send_text_message(
                 message.whatsapp_number,
@@ -107,6 +137,25 @@ async def meta_health_check(token: str | None = None):
         "template_name": os.getenv("WHATSAPP_JOB_TEMPLATE_NAME", "job_match_alert"),
         "template_language": os.getenv("WHATSAPP_TEMPLATE_LANGUAGE", "en_US"),
     }
+
+
+@app.get("/admin/status")
+async def admin_status(token: str | None = None):
+    cron_secret = os.getenv("CRON_SECRET")
+    if cron_secret and token != cron_secret:
+        raise HTTPException(status_code=403, detail="Invalid admin token.")
+
+    status = get_admin_status()
+    status["integrations"] = {
+        "gemini_configured": bool(os.getenv("GEMINI_API_KEY")),
+        "meta_template_configured": bool(os.getenv("WHATSAPP_JOB_TEMPLATE_NAME")),
+        "rapidapi_configured": bool(os.getenv("RAPIDAPI_KEY")),
+        "daily_summary_template_configured": bool(
+            os.getenv("WHATSAPP_DAILY_SUMMARY_TEMPLATE_NAME")
+        ),
+        "no_match_template_configured": bool(os.getenv("WHATSAPP_NO_MATCH_TEMPLATE_NAME")),
+    }
+    return status
 
 
 @app.get("/test/job-template")

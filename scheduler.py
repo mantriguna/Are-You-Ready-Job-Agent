@@ -5,9 +5,14 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
-from database import cleanup_old_sent_jobs, get_ready_user_profiles
+from database import (
+    cleanup_old_sent_jobs,
+    create_cron_run,
+    finish_cron_run,
+    get_ready_user_profiles,
+)
 from matching_pipeline import UserJobRunResult, run_user_job_search
-from whatsapp import send_text_message
+from whatsapp import send_template_message, send_text_message
 
 
 class ScheduledRunResult(BaseModel):
@@ -72,6 +77,12 @@ async def run_scheduled_job_search(
     semaphore = asyncio.Semaphore(max_concurrency)
     runs: list[UserJobRunResult] = []
     errors: list[dict[str, str]] = []
+    run_id = create_cron_run(
+        timezone=timezone_name,
+        current_hour=current_hour,
+        matched_profile_count=len(profiles),
+        dry_run=dry_run,
+    )
     should_use_template_alert = (
         use_template_alert
         if use_template_alert is not None
@@ -102,19 +113,34 @@ async def run_scheduled_job_search(
                     else os.getenv("SEND_NO_RESULT_SUMMARY", "false").lower() == "true"
                 )
                 if not dry_run and should_send_no_results and run_result.alert_count == 0:
-                    await send_text_message(
-                        whatsapp_number,
-                        (
-                            "Job search completed for today: no India 0-2 years "
-                            "1 lakh+/month matches passed the filter. I will check again at 8 PM tomorrow."
-                        ),
-                    )
+                    if os.getenv("WHATSAPP_NO_MATCH_TEMPLATE_NAME"):
+                        await send_template_message(
+                            whatsapp_number=whatsapp_number,
+                            template_name=os.getenv("WHATSAPP_NO_MATCH_TEMPLATE_NAME", ""),
+                            language_code=os.getenv("WHATSAPP_TEMPLATE_LANGUAGE", "en_US"),
+                            body_parameters=["today", "8 PM"],
+                        )
+                    else:
+                        await send_text_message(
+                            whatsapp_number,
+                            (
+                                "Job search completed for today: no India 0-2 years "
+                                "1 lakh+/month matches passed the filter. I will check again at 8 PM tomorrow."
+                            ),
+                        )
             except Exception as exc:
                 errors.append(
                     {"whatsapp_number": whatsapp_number, "error": str(exc)}
                 )
 
     await asyncio.gather(*(run_one(profile) for profile in profiles))
+    finish_cron_run(
+        run_id,
+        status="failed" if errors else "completed",
+        jobs_scraped=sum(run.scraped_count for run in runs),
+        jobs_sent=sum(run.alert_count for run in runs),
+        errors=errors,
+    )
 
     return ScheduledRunResult(
         timezone=timezone_name,

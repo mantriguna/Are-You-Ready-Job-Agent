@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, HttpUrl
@@ -97,6 +98,37 @@ def _build_search_queries(target_title: str) -> list[str]:
         seen.add(normalized)
         search_queries.append(query)
     return search_queries
+
+
+def _format_daily_summary(alerts: list[dict]) -> str:
+    lines = []
+    for alert in alerts[:15]:
+        location = f" - {alert['location']}" if alert.get("location") else ""
+        lines.append(
+            f"{alert['job_number']}. {alert['title']} at {alert['company']} "
+            f"({alert['match_percentage']}%){location}"
+        )
+    return "\n".join(lines)[:3000]
+
+
+def _priority_score(job: JobListing, evaluation: JobMatchEvaluation) -> int:
+    text = f"{job.title} {job.description} {job.salary_text or ''}".lower()
+    score = evaluation.match_percentage
+    if job.company.lower() == "amazon":
+        score += 25
+    if job.posted_at:
+        age_days = (datetime.now(UTC) - job.posted_at).days
+        if age_days <= 1:
+            score += 15
+        elif age_days <= 7:
+            score += 8
+    if any(marker in text for marker in ["sde-1", "sde i", "associate", "junior", "0-2"]):
+        score += 10
+    if any(marker in text for marker in ["full time", "full-time", "contract", "contractual"]):
+        score += 5
+    if any(marker in text for marker in ["lpa", "lakh", "inr", "rs."]):
+        score += 5
+    return score
 
 
 async def run_user_job_search(
@@ -222,30 +254,32 @@ async def run_user_job_search(
     alert_candidates.sort(
         key=lambda item: (
             item[0].company.lower() != "amazon",
-            -item[1].match_percentage,
+            -_priority_score(item[0], item[1]),
             item[0].title.lower(),
         )
     )
     selected_alerts = alert_candidates[:limit]
     latest_alerts: list[dict] = []
+    summary_template_name = os.getenv("WHATSAPP_DAILY_SUMMARY_TEMPLATE_NAME")
 
     for job_number, (job, evaluation) in enumerate(selected_alerts, start=1):
         action: Literal["would_send", "sent", "sent_template", "send_failed"]
-        action = "would_send" if dry_run else "sent"
+        action = "would_send" if dry_run else ("sent_template" if summary_template_name else "sent")
         error = None
         tailored_resume_path = None
 
-        try:
-            tailored_resume_path = generate_tailored_resume_txt(
-                profile=profile,
-                job=job,
-                evaluation=evaluation,
-            )
-        except Exception as exc:
-            logger.exception("Failed to generate tailored resume for %s", job.job_id)
-            error = f"resume_generation_failed: {exc}"
+        if not use_template_alert and not summary_template_name:
+            try:
+                tailored_resume_path = generate_tailored_resume_txt(
+                    profile=profile,
+                    job=job,
+                    evaluation=evaluation,
+                )
+            except Exception as exc:
+                logger.exception("Failed to generate tailored resume for %s", job.job_id)
+                error = f"resume_generation_failed: {exc}"
 
-        if not dry_run:
+        if not dry_run and not summary_template_name:
             try:
                 alert_text = _format_job_alert(job, evaluation, job_number)
                 if use_template_alert:
@@ -293,6 +327,15 @@ async def run_user_job_search(
                 logger.exception("Failed to send job alert for %s", job.job_id)
                 action = "send_failed"
                 error = str(exc)
+        elif not dry_run and summary_template_name:
+            save_sent_job(
+                whatsapp_number=whatsapp_number,
+                job_id=job.job_id,
+                job_title=job.title,
+                company_name=job.company,
+                job_url=str(job.url),
+                match_percentage=evaluation.match_percentage,
+            )
 
         latest_alerts.append(
             {
@@ -322,6 +365,25 @@ async def run_user_job_search(
                 job_number=job_number,
             )
         )
+
+    if not dry_run and summary_template_name and latest_alerts:
+        try:
+            await send_template_message(
+                whatsapp_number=whatsapp_number,
+                template_name=summary_template_name,
+                language_code=os.getenv("WHATSAPP_TEMPLATE_LANGUAGE", "en_US"),
+                body_parameters=[
+                    str(len(latest_alerts)),
+                    "today",
+                    _format_daily_summary(latest_alerts),
+                ],
+            )
+        except Exception as exc:
+            logger.exception("Failed to send daily summary template.")
+            for result in results:
+                if result.action == "sent_template":
+                    result.action = "send_failed"
+                    result.error = str(exc)
 
     if not dry_run:
         try:

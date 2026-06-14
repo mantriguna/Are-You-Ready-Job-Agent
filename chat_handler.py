@@ -120,6 +120,7 @@ def build_chat_reply(profile: dict | None, incoming_text: str) -> OnboardingStep
                     f"For Job {job_number}, this is the tailored resume LaTeX code.\n\n"
                     f"{latex_code[:3500]}"
                 ),
+                str(path),
             )
 
         if any(word in intent for word in ["minimum", "experience", "min"]):

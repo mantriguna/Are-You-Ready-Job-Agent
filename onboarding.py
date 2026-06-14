@@ -5,6 +5,7 @@ from dataclasses import dataclass
 class OnboardingStep:
     profile_updates: dict
     reply: str
+    document_path: str | None = None
 
 
 def build_onboarding_step(profile: dict | None, incoming_text: str) -> OnboardingStep:
