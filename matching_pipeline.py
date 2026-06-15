@@ -154,6 +154,8 @@ async def run_user_job_search(
 
     search_queries = _build_search_queries(target_title)
     evaluation_pool_limit = int(os.getenv("JOB_EVALUATION_POOL_LIMIT", str(max(limit, 15))))
+    target_pool_size = max_evaluations or evaluation_pool_limit
+    fetch_limit = max(limit, target_pool_size, 1)
     scraped_jobs: list[JobListing] = []
     seen_job_ids: set[str] = set()
     source_count = 0
@@ -161,7 +163,7 @@ async def run_user_job_search(
         query_result = await fetch_jobs(
             query=search_query,
             location="India",
-            limit=evaluation_pool_limit,
+            limit=fetch_limit,
             preferred_filters=preferred_filters,
             recent_days=recent_days,
         )
@@ -171,14 +173,14 @@ async def run_user_job_search(
                 continue
             seen_job_ids.add(job.job_id)
             scraped_jobs.append(job)
-        if len(scraped_jobs) >= evaluation_pool_limit:
+        if len(scraped_jobs) >= target_pool_size:
             break
 
     if not scraped_jobs:
         query_result = await fetch_jobs(
             query=target_title,
             location="India",
-            limit=evaluation_pool_limit,
+            limit=fetch_limit,
             preferred_filters=preferred_filters,
             recent_days=recent_days,
         )
@@ -190,7 +192,7 @@ async def run_user_job_search(
         location="India",
         source_count=source_count,
         job_count=len(scraped_jobs),
-        jobs=scraped_jobs[:evaluation_pool_limit],
+        jobs=scraped_jobs[:target_pool_size],
     )
 
     job_ids = [job.job_id for job in scraped.jobs]
