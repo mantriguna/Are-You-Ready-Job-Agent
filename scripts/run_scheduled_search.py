@@ -1,0 +1,41 @@
+import argparse
+import asyncio
+import json
+
+from dotenv import load_dotenv
+
+from scheduler import run_scheduled_job_search
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run scheduled AI job search.")
+    parser.add_argument("--limit", type=int, default=15)
+    parser.add_argument("--threshold", type=int, default=75)
+    parser.add_argument("--recent-days", type=int, default=1)
+    parser.add_argument("--override-hour", type=int, default=20)
+    parser.add_argument("--max-evaluations", type=int, default=15)
+    parser.add_argument("--dry-run", action="store_true")
+    return parser.parse_args()
+
+
+async def main() -> int:
+    load_dotenv(".env")
+    args = parse_args()
+    result = await run_scheduled_job_search(
+        dry_run=args.dry_run,
+        limit=args.limit,
+        threshold=args.threshold,
+        override_hour=args.override_hour,
+        recent_days=args.recent_days,
+        max_evaluations=args.max_evaluations,
+        use_template_alert=True,
+        send_no_results=False,
+    )
+    print(result.model_dump_json(indent=2))
+    if result.errors:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(asyncio.run(main()))
