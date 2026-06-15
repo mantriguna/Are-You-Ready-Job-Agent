@@ -99,14 +99,47 @@ def _looks_entry_level(job: JobListing) -> bool:
 
     minimum_years = _minimum_required_years(text)
     if minimum_years is not None:
-        return minimum_years <= 2
+        return minimum_years <= 3
 
     entry_markers = ["sde-1", "sde i", "software development engineer i", "junior", "associate"]
-    return any(marker in text for marker in entry_markers)
+    role_markers = [
+        "software engineer",
+        "software development engineer",
+        "developer",
+        "backend",
+        "python",
+        "java",
+        "sde",
+    ]
+    return any(marker in text for marker in entry_markers + role_markers)
 
 
 def _salary_matches_goal(job: JobListing) -> bool:
     text = f"{job.title} {job.description} {job.salary_text or ''}".lower()
+    title = job.title.lower()
+    has_salary_marker_clean = bool(
+        search(r"(\u20b9|\brs\.?\b|\binr\b|\blpa\b|\blakh\b)", text)
+    )
+    if not has_salary_marker_clean:
+        likely_good_salary_roles = [
+            "sde",
+            "software engineer",
+            "software development engineer",
+            "backend",
+            "python developer",
+            "java developer",
+            "ai developer",
+        ]
+        return any(marker in title for marker in likely_good_salary_roles)
+
+    if search(r"(1[5-9]|[2-9]\d)\s*lpa", text):
+        return True
+
+    monthly_amounts_clean = [
+        int(value.replace(",", ""))
+        for value in findall(r"(?:\u20b9|rs\.?|inr)\s*([0-9][0-9,]{4,})", text)
+    ]
+    return any(amount >= 100000 for amount in monthly_amounts_clean)
     has_salary_marker = bool(search(r"(₹|\brs\.?\b|\binr\b|\blpa\b|\blakh\b)", text))
     if not has_salary_marker:
         return job.company.lower() in {"amazon", "amazon jobs"} and "sde" in job.title.lower()
