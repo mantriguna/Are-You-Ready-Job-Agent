@@ -108,7 +108,13 @@ def _compact_text(value: str, max_length: int) -> str:
 
 
 def _format_daily_summary(alerts: list[dict]) -> str:
+    chunks = _format_daily_summary_chunks(alerts)
+    return chunks[0] if chunks else ""
+
+
+def _format_daily_summary_chunks(alerts: list[dict]) -> list[str]:
     lines = []
+    chunks: list[str] = []
     max_summary_chars = 950
     for alert in alerts:
         location = (alert.get("location") or "").split(",")[0].strip()
@@ -122,9 +128,13 @@ def _format_daily_summary(alerts: list[dict]) -> str:
         )
         next_summary = "\n".join([*lines, line])
         if len(next_summary) > max_summary_chars and lines:
-            break
+            chunks.append("\n".join(lines))
+            lines = [line]
+            continue
         lines.append(line)
-    return "\n".join(lines)
+    if lines:
+        chunks.append("\n".join(lines))
+    return chunks
 
 
 def _priority_score(job: JobListing, evaluation: JobMatchEvaluation) -> int:
@@ -226,6 +236,9 @@ async def run_user_job_search(
     fill_limit_with_lower_matches = (
         os.getenv("FILL_DAILY_LIMIT_WITH_LOWER_MATCHES", "true").lower() == "true"
     )
+    send_all_above_threshold = (
+        os.getenv("SEND_ALL_ABOVE_THRESHOLD_MATCHES", "true").lower() == "true"
+    )
 
     for job in jobs_to_evaluate:
         try:
@@ -287,7 +300,9 @@ async def run_user_job_search(
 
     alert_candidates.sort(key=sort_key)
     lower_match_candidates.sort(key=sort_key)
-    selected_alerts = alert_candidates[:limit]
+    selected_alerts = (
+        alert_candidates if send_all_above_threshold else alert_candidates[:limit]
+    )
     if fill_limit_with_lower_matches and len(selected_alerts) < limit:
         selected_job_ids = {job.job_id for job, _ in selected_alerts}
         for job, evaluation in lower_match_candidates:
@@ -423,16 +438,23 @@ async def run_user_job_search(
 
     if not dry_run and summary_template_name and latest_alerts:
         try:
-            await send_template_message(
-                whatsapp_number=whatsapp_number,
-                template_name=summary_template_name,
-                language_code=os.getenv("WHATSAPP_TEMPLATE_LANGUAGE", "en_US"),
-                body_parameters=[
-                    str(len(latest_alerts)),
-                    "today",
-                    _format_daily_summary(latest_alerts),
-                ],
-            )
+            summary_chunks = _format_daily_summary_chunks(latest_alerts)
+            for chunk_index, summary_chunk in enumerate(summary_chunks, start=1):
+                period = (
+                    f"today, part {chunk_index}/{len(summary_chunks)}"
+                    if len(summary_chunks) > 1
+                    else "today"
+                )
+                await send_template_message(
+                    whatsapp_number=whatsapp_number,
+                    template_name=summary_template_name,
+                    language_code=os.getenv("WHATSAPP_TEMPLATE_LANGUAGE", "en_US"),
+                    body_parameters=[
+                        str(len(latest_alerts)),
+                        period,
+                        summary_chunk,
+                    ],
+                )
         except Exception as exc:
             logger.exception("Failed to send daily summary template.")
             for result in results:
