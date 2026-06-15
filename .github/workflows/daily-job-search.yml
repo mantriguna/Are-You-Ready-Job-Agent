@@ -92,6 +92,7 @@ jobs:
           PREFERRED_JOB_QUERIES: SDE-1,Software Development Engineer,Backend Engineer,Python Developer,Java Developer
           JOB_EVALUATION_POOL_LIMIT: ${{ github.event.inputs.max_evaluations || '15' }}
           MAX_EVALUATIONS_PER_RUN: ${{ github.event.inputs.max_evaluations || '15' }}
+          FILL_DAILY_LIMIT_WITH_LOWER_MATCHES: "true"
           SENT_JOB_RETENTION_DAYS: "60"
           SEND_NO_RESULT_SUMMARY: "true"
           DRY_RUN_INPUT: ${{ github.event.inputs.dry_run || 'false' }}

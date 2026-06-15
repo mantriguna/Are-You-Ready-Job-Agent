@@ -100,15 +100,31 @@ def _build_search_queries(target_title: str) -> list[str]:
     return search_queries
 
 
+def _compact_text(value: str, max_length: int) -> str:
+    clean = " ".join(value.split())
+    if len(clean) <= max_length:
+        return clean
+    return f"{clean[: max_length - 3].rstrip()}..."
+
+
 def _format_daily_summary(alerts: list[dict]) -> str:
     lines = []
-    for alert in alerts[:15]:
-        location = f" - {alert['location']}" if alert.get("location") else ""
-        lines.append(
-            f"{alert['job_number']}. {alert['title']} at {alert['company']} "
-            f"({alert['match_percentage']}%){location}"
+    max_summary_chars = 950
+    for alert in alerts:
+        location = (alert.get("location") or "").split(",")[0].strip()
+        location_text = f" | {location}" if location else ""
+        line = _compact_text(
+            (
+                f"{alert['job_number']}. {alert['company']} | {alert['title']} "
+                f"| {alert['match_percentage']}%{location_text}"
+            ),
+            120,
         )
-    return "\n".join(lines)[:3000]
+        next_summary = "\n".join([*lines, line])
+        if len(next_summary) > max_summary_chars and lines:
+            break
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _priority_score(job: JobListing, evaluation: JobMatchEvaluation) -> int:
@@ -205,7 +221,11 @@ async def run_user_job_search(
 
     results: list[EvaluatedJob] = []
     alert_candidates: list[tuple[JobListing, JobMatchEvaluation]] = []
+    lower_match_candidates: list[tuple[JobListing, JobMatchEvaluation]] = []
     jobs_to_evaluate = fresh_jobs[:max_evaluations] if max_evaluations else fresh_jobs
+    fill_limit_with_lower_matches = (
+        os.getenv("FILL_DAILY_LIMIT_WITH_LOWER_MATCHES", "true").lower() == "true"
+    )
 
     for job in jobs_to_evaluate:
         try:
@@ -240,29 +260,60 @@ async def run_user_job_search(
 
         should_alert = evaluation.should_alert and evaluation.match_percentage >= threshold
         if not should_alert:
-            results.append(
-                EvaluatedJob(
-                    job_id=job.job_id,
-                    title=job.title,
-                    company=job.company,
-                    location=job.location,
-                    url=job.url,
-                    evaluation=evaluation,
-                    action="skipped_low_match",
+            if fill_limit_with_lower_matches and evaluation.match_percentage > 0:
+                lower_match_candidates.append((job, evaluation))
+            else:
+                results.append(
+                    EvaluatedJob(
+                        job_id=job.job_id,
+                        title=job.title,
+                        company=job.company,
+                        location=job.location,
+                        url=job.url,
+                        evaluation=evaluation,
+                        action="skipped_low_match",
+                    )
                 )
-            )
             continue
 
         alert_candidates.append((job, evaluation))
 
-    alert_candidates.sort(
-        key=lambda item: (
+    def sort_key(item: tuple[JobListing, JobMatchEvaluation]) -> tuple[bool, int, str]:
+        return (
             item[0].company.lower() != "amazon",
             -_priority_score(item[0], item[1]),
             item[0].title.lower(),
         )
-    )
+
+    alert_candidates.sort(key=sort_key)
+    lower_match_candidates.sort(key=sort_key)
     selected_alerts = alert_candidates[:limit]
+    if fill_limit_with_lower_matches and len(selected_alerts) < limit:
+        selected_job_ids = {job.job_id for job, _ in selected_alerts}
+        for job, evaluation in lower_match_candidates:
+            if job.job_id in selected_job_ids:
+                continue
+            selected_alerts.append((job, evaluation))
+            selected_job_ids.add(job.job_id)
+            if len(selected_alerts) >= limit:
+                break
+
+    selected_job_ids = {job.job_id for job, _ in selected_alerts}
+    for job, evaluation in lower_match_candidates:
+        if job.job_id in selected_job_ids:
+            continue
+        results.append(
+            EvaluatedJob(
+                job_id=job.job_id,
+                title=job.title,
+                company=job.company,
+                location=job.location,
+                url=job.url,
+                evaluation=evaluation,
+                action="skipped_low_match",
+            )
+        )
+
     latest_alerts: list[dict] = []
     summary_template_name = os.getenv("WHATSAPP_DAILY_SUMMARY_TEMPLATE_NAME")
 
