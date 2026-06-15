@@ -41,7 +41,26 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Validate required secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_PHONE_NUMBER_ID: ${{ secrets.META_PHONE_NUMBER_ID }}
+          META_WABA_ID: ${{ secrets.META_WABA_ID }}
+        run: |
+          missing=0
+          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY GEMINI_API_KEY META_ACCESS_TOKEN META_PHONE_NUMBER_ID META_WABA_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name GitHub Actions secret is missing"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
       - name: Run scheduled search
+        shell: bash
         env:
           APP_TIMEZONE: Asia/Kolkata
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -65,11 +84,20 @@ jobs:
           MAX_EVALUATIONS_PER_RUN: ${{ github.event.inputs.max_evaluations || '15' }}
           SENT_JOB_RETENTION_DAYS: "60"
           SEND_NO_RESULT_SUMMARY: "false"
-        run: >-
-          python scripts/run_scheduled_search.py
-          --limit "${{ github.event.inputs.limit || '15' }}"
-          --max-evaluations "${{ github.event.inputs.max_evaluations || '15' }}"
-          --threshold 75
-          --recent-days 1
-          --override-hour 20
-          ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run || 'false' }}
+          LIMIT_INPUT: ${{ github.event.inputs.limit || '15' }}
+          MAX_EVALUATIONS_INPUT: ${{ github.event.inputs.max_evaluations || '15' }}
+        run: |
+          args=(
+            --limit "$LIMIT_INPUT"
+            --max-evaluations "$MAX_EVALUATIONS_INPUT"
+            --threshold 75
+            --recent-days 1
+            --override-hour 20
+          )
+
+          if [ "$DRY_RUN_INPUT" = "true" ]; then
+            args+=(--dry-run)
+          fi
+
+          python scripts/run_scheduled_search.py "${args[@]}"
