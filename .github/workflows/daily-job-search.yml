@@ -15,6 +15,14 @@ on:
         description: "Maximum jobs to evaluate"
         required: false
         default: "15"
+      threshold:
+        description: "Minimum resume match score"
+        required: false
+        default: "75"
+      recent_days:
+        description: "Search jobs posted within this many days"
+        required: false
+        default: "1"
   schedule:
     # 8:00, 8:07, and 8:14 PM Asia/Kolkata in UTC.
     - cron: "30 14 * * *"
@@ -87,12 +95,14 @@ jobs:
           DRY_RUN_INPUT: ${{ github.event.inputs.dry_run || 'false' }}
           LIMIT_INPUT: ${{ github.event.inputs.limit || '15' }}
           MAX_EVALUATIONS_INPUT: ${{ github.event.inputs.max_evaluations || '15' }}
+          THRESHOLD_INPUT: ${{ github.event.inputs.threshold || '75' }}
+          RECENT_DAYS_INPUT: ${{ github.event.inputs.recent_days || '1' }}
         run: |
           args=(
             --limit "$LIMIT_INPUT"
             --max-evaluations "$MAX_EVALUATIONS_INPUT"
-            --threshold 75
-            --recent-days 1
+            --threshold "$THRESHOLD_INPUT"
+            --recent-days "$RECENT_DAYS_INPUT"
             --override-hour 20
           )
 
