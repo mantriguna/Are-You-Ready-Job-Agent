@@ -141,6 +141,7 @@ async def run_user_job_search(
     recent_days: int | None = 1,
     ignore_duplicates: bool = False,
     use_template_alert: bool = False,
+    max_evaluations: int | None = None,
 ) -> UserJobRunResult:
     profile = get_user_profile(whatsapp_number)
     if not profile:
@@ -202,8 +203,9 @@ async def run_user_job_search(
 
     results: list[EvaluatedJob] = []
     alert_candidates: list[tuple[JobListing, JobMatchEvaluation]] = []
+    jobs_to_evaluate = fresh_jobs[:max_evaluations] if max_evaluations else fresh_jobs
 
-    for job in fresh_jobs:
+    for job in jobs_to_evaluate:
         try:
             evaluation = evaluate_job_match(
                 target_title=target_title,
@@ -399,7 +401,7 @@ async def run_user_job_search(
         ignore_duplicates=ignore_duplicates,
         scraped_count=scraped.job_count,
         duplicate_count=len(duplicate_ids),
-        evaluated_count=len(fresh_jobs),
+        evaluated_count=len(jobs_to_evaluate),
         alert_count=len(selected_alerts),
         dry_run=dry_run,
         results=results,

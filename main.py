@@ -222,6 +222,7 @@ async def run_jobs_for_user(
     recent_days: int | None = Query(1, ge=0, le=30),
     ignore_duplicates: bool = False,
     use_template_alert: bool = False,
+    max_evaluations: int | None = Query(None, ge=1, le=15),
 ):
     try:
         return await run_user_job_search(
@@ -233,6 +234,7 @@ async def run_jobs_for_user(
             recent_days=recent_days,
             ignore_duplicates=ignore_duplicates,
             use_template_alert=use_template_alert,
+            max_evaluations=max_evaluations,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -252,6 +254,7 @@ async def execute_daily_search(
     use_template_alert: bool | None = None,
     send_no_results: bool | None = None,
     background: bool = False,
+    max_evaluations: int | None = Query(None, ge=1, le=15),
 ):
     cron_secret = os.getenv("CRON_SECRET")
     if cron_secret and token != cron_secret:
@@ -272,6 +275,7 @@ async def execute_daily_search(
             ignore_duplicates=ignore_duplicates,
             use_template_alert=use_template_alert,
             send_no_results=send_no_results,
+            max_evaluations=max_evaluations,
         )
         return ScheduledRunResult(
             timezone=timezone_name,
@@ -292,4 +296,5 @@ async def execute_daily_search(
         ignore_duplicates=ignore_duplicates,
         use_template_alert=use_template_alert,
         send_no_results=send_no_results,
+        max_evaluations=max_evaluations,
     )

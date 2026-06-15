@@ -69,6 +69,7 @@ async def run_scheduled_job_search(
     ignore_duplicates: bool = False,
     use_template_alert: bool | None = None,
     send_no_results: bool | None = None,
+    max_evaluations: int | None = None,
 ) -> ScheduledRunResult:
     timezone_name, current_hour, profiles = get_profiles_for_current_hour(
         override_hour=override_hour
@@ -90,6 +91,8 @@ async def run_scheduled_job_search(
     )
     cleanup_days = int(os.getenv("SENT_JOB_RETENTION_DAYS", "60"))
     cleanup_old_sent_jobs(cleanup_days)
+    if max_evaluations is None:
+        max_evaluations = int(os.getenv("MAX_EVALUATIONS_PER_RUN", "3"))
 
     async def run_one(profile: dict) -> None:
         async with semaphore:
@@ -104,6 +107,7 @@ async def run_scheduled_job_search(
                     recent_days=recent_days,
                     ignore_duplicates=ignore_duplicates,
                     use_template_alert=should_use_template_alert,
+                    max_evaluations=max_evaluations,
                 )
                 runs.append(run_result)
 
