@@ -34,7 +34,7 @@ async def main() -> int:
         recent_days=args.recent_days,
         max_evaluations=args.max_evaluations,
         use_template_alert=True,
-        send_no_results=False,
+        send_no_results=None,
     )
     print(result.model_dump_json(indent=2))
     if result.errors:

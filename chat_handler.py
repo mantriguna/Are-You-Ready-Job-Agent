@@ -60,6 +60,25 @@ def _is_leave(text: str) -> bool:
     return text.strip().lower() in {"continue", "skip", "leave", "no", "cancel"}
 
 
+def _is_goodbye(text: str) -> bool:
+    normalized = text.strip().lower().replace("'", "")
+    goodbyes = {
+        "bye",
+        "by",
+        "goodbye",
+        "good bye",
+        "see you",
+        "see you later",
+        "im leaving",
+        "i am leaving",
+        "leaving",
+        "talk later",
+        "ok bye",
+        "thanks bye",
+    }
+    return normalized in goodbyes
+
+
 def _short_job_description(description: str) -> str:
     clean = " ".join(description.split())
     return clean[:1200] + ("..." if len(clean) > 1200 else "")
@@ -92,6 +111,16 @@ def build_chat_reply(profile: dict | None, incoming_text: str) -> OnboardingStep
     text = " ".join(incoming_text.split())
     lower = text.lower()
     state = (profile or {}).get("onboarding_state", "new")
+
+    if _is_goodbye(text):
+        name = (profile or {}).get("user_name") or "there"
+        return OnboardingStep(
+            {},
+            (
+                f"Sure, {name}. I will keep watching for strong job matches and message you "
+                "when the next alert is ready. Come back anytime."
+            ),
+        )
 
     job_match = re.search(r"\bjob\s*(\d+)\b(?:\s*[:\-]?\s*(.*))?", lower)
     if job_match and profile:

@@ -83,6 +83,8 @@ jobs:
           META_GRAPH_API_VERSION: v25.0
           USE_WHATSAPP_TEMPLATES: "true"
           WHATSAPP_JOB_TEMPLATE_NAME: job_match_alert
+          WHATSAPP_DAILY_SUMMARY_TEMPLATE_NAME: daily_job_summary
+          WHATSAPP_NO_MATCH_TEMPLATE_NAME: daily_no_match
           WHATSAPP_TEMPLATE_LANGUAGE: en_US
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
           RAPIDAPI_JOBS_HOST: jsearch.p.rapidapi.com
@@ -91,7 +93,7 @@ jobs:
           JOB_EVALUATION_POOL_LIMIT: ${{ github.event.inputs.max_evaluations || '15' }}
           MAX_EVALUATIONS_PER_RUN: ${{ github.event.inputs.max_evaluations || '15' }}
           SENT_JOB_RETENTION_DAYS: "60"
-          SEND_NO_RESULT_SUMMARY: "false"
+          SEND_NO_RESULT_SUMMARY: "true"
           DRY_RUN_INPUT: ${{ github.event.inputs.dry_run || 'false' }}
           LIMIT_INPUT: ${{ github.event.inputs.limit || '15' }}
           MAX_EVALUATIONS_INPUT: ${{ github.event.inputs.max_evaluations || '15' }}
