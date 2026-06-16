@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from datetime import UTC, datetime
@@ -242,7 +243,8 @@ async def run_user_job_search(
 
     for job in jobs_to_evaluate:
         try:
-            evaluation = evaluate_job_match(
+            evaluation = await asyncio.to_thread(
+                evaluate_job_match,
                 target_title=target_title,
                 experience_summary=experience_summary,
                 resume_text=profile.get("resume_text"),

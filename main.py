@@ -68,6 +68,7 @@ def _public_generated_file_url(path: str | None) -> str | None:
 
 async def _run_latest_jobs_from_chat(whatsapp_number: str) -> None:
     try:
+        logger.info("Starting on-demand latest job search for %s", whatsapp_number)
         result = await run_user_job_search(
             whatsapp_number=whatsapp_number,
             limit=int(os.getenv("CHAT_LATEST_JOB_LIMIT", "15")),
@@ -79,7 +80,34 @@ async def _run_latest_jobs_from_chat(whatsapp_number: str) -> None:
             use_template_alert=True,
             max_evaluations=int(os.getenv("CHAT_LATEST_JOB_MAX_EVALUATIONS", "25")),
         )
-        if result.alert_count > 0:
+        sent_results = [
+            item
+            for item in result.results
+            if item.action in {"sent", "sent_template"} and not item.error
+        ]
+        failed_results = [item for item in result.results if item.action == "send_failed"]
+        logger.info(
+            "Finished on-demand latest job search for %s: scraped=%s evaluated=%s alerts=%s sent=%s failed=%s",
+            whatsapp_number,
+            result.scraped_count,
+            result.evaluated_count,
+            result.alert_count,
+            len(sent_results),
+            len(failed_results),
+        )
+
+        if result.alert_count > 0 and sent_results:
+            return
+
+        if result.alert_count > 0 and failed_results:
+            first_error = failed_results[0].error or "Unknown WhatsApp send error."
+            await send_text_message(
+                whatsapp_number,
+                (
+                    f"I found {result.alert_count} matching job(s), but WhatsApp could not "
+                    f"send the summary template. Error: {first_error[:900]}"
+                ),
+            )
             return
 
         no_match_template = os.getenv("WHATSAPP_NO_MATCH_TEMPLATE_NAME")
