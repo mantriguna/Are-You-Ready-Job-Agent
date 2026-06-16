@@ -267,14 +267,14 @@ async def search_jobs(
 @app.post("/jobs/run-user/{whatsapp_number}", response_model=UserJobRunResult)
 async def run_jobs_for_user(
     whatsapp_number: str,
-    limit: int = Query(15, ge=1, le=15),
+    limit: int = Query(15, ge=1, le=50),
     threshold: int = Query(75, ge=0, le=100),
     dry_run: bool = True,
     preferred_filters: bool = True,
     recent_days: int | None = Query(1, ge=0, le=30),
     ignore_duplicates: bool = False,
     use_template_alert: bool = False,
-    max_evaluations: int | None = Query(None, ge=1, le=15),
+    max_evaluations: int | None = Query(None, ge=1, le=50),
 ):
     try:
         return await run_user_job_search(
@@ -297,7 +297,7 @@ async def execute_daily_search(
     background_tasks: BackgroundTasks,
     token: str | None = None,
     dry_run: bool = False,
-    limit: int = Query(15, ge=1, le=15),
+    limit: int = Query(15, ge=1, le=50),
     threshold: int = Query(75, ge=0, le=100),
     override_hour: int | None = Query(None, ge=0, le=23),
     preferred_filters: bool = True,
@@ -306,7 +306,7 @@ async def execute_daily_search(
     use_template_alert: bool | None = None,
     send_no_results: bool | None = None,
     background: bool = False,
-    max_evaluations: int | None = Query(None, ge=1, le=15),
+    max_evaluations: int | None = Query(None, ge=1, le=50),
 ):
     cron_secret = os.getenv("CRON_SECRET")
     if cron_secret and token != cron_secret:
@@ -349,4 +349,43 @@ async def execute_daily_search(
         use_template_alert=use_template_alert,
         send_no_results=send_no_results,
         max_evaluations=max_evaluations,
+    )
+
+
+@app.api_route("/cron/daily-whatsapp", methods=["GET", "POST"], response_model=ScheduledRunResult)
+async def cron_daily_whatsapp(
+    background_tasks: BackgroundTasks,
+    token: str | None = None,
+    limit: int = Query(15, ge=1, le=50),
+    max_evaluations: int = Query(25, ge=1, le=50),
+    threshold: int = Query(75, ge=0, le=100),
+    recent_days: int = Query(1, ge=1, le=30),
+):
+    cron_secret = os.getenv("CRON_SECRET")
+    if cron_secret and token != cron_secret:
+        raise HTTPException(status_code=403, detail="Invalid cron token.")
+
+    timezone_name, current_hour, profiles = get_profiles_for_current_hour(
+        override_hour=20
+    )
+    background_tasks.add_task(
+        run_scheduled_job_search,
+        dry_run=False,
+        limit=limit,
+        threshold=threshold,
+        override_hour=20,
+        preferred_filters=True,
+        recent_days=recent_days,
+        ignore_duplicates=False,
+        use_template_alert=True,
+        send_no_results=True,
+        max_evaluations=max_evaluations,
+    )
+    return ScheduledRunResult(
+        timezone=timezone_name,
+        current_hour=current_hour,
+        matched_profile_count=len(profiles),
+        dry_run=False,
+        runs=[],
+        errors=[],
     )
