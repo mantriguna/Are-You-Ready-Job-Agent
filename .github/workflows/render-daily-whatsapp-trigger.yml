@@ -3,10 +3,8 @@ name: Render Daily WhatsApp Trigger
 on:
   workflow_dispatch:
   schedule:
-    # Backup triggers around 8 PM Asia/Kolkata.
-    - cron: "25 14 * * *"
+    # 8:00 PM Asia/Kolkata in UTC.
     - cron: "30 14 * * *"
-    - cron: "35 14 * * *"
 
 jobs:
   trigger-render-cron:

@@ -17,7 +17,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=15)
     parser.add_argument("--threshold", type=int, default=75)
     parser.add_argument("--recent-days", type=int, default=1)
-    parser.add_argument("--override-hour", type=int, default=20)
+    parser.add_argument("--override-hour", type=int, default=None)
     parser.add_argument("--max-evaluations", type=int, default=15)
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()

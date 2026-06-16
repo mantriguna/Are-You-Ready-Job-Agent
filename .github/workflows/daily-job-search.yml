@@ -23,11 +23,6 @@ on:
         description: "Search jobs posted within this many days"
         required: false
         default: "1"
-  schedule:
-    # 8:00, 8:07, and 8:14 PM Asia/Kolkata in UTC.
-    - cron: "30 14 * * *"
-    - cron: "37 14 * * *"
-    - cron: "44 14 * * *"
 
 jobs:
   run-job-search:
@@ -112,8 +107,11 @@ jobs:
             --max-evaluations "$MAX_EVALUATIONS_INPUT"
             --threshold "$THRESHOLD_INPUT"
             --recent-days "$RECENT_DAYS_INPUT"
-            --override-hour 20
           )
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            args+=(--override-hour 20)
+          fi
 
           if [ "$DRY_RUN_INPUT" = "true" ]; then
             args+=(--dry-run)

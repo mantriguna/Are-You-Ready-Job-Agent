@@ -388,20 +388,22 @@ async def cron_daily_whatsapp(
     max_evaluations: int = Query(25, ge=1, le=50),
     threshold: int = Query(75, ge=0, le=100),
     recent_days: int = Query(1, ge=1, le=30),
+    force: bool = False,
 ):
     cron_secret = os.getenv("CRON_SECRET")
     if cron_secret and token != cron_secret:
         raise HTTPException(status_code=403, detail="Invalid cron token.")
 
+    override_hour = 20 if force else None
     timezone_name, current_hour, profiles = get_profiles_for_current_hour(
-        override_hour=20
+        override_hour=override_hour
     )
     background_tasks.add_task(
         run_scheduled_job_search,
         dry_run=False,
         limit=limit,
         threshold=threshold,
-        override_hour=20,
+        override_hour=override_hour,
         preferred_filters=True,
         recent_days=recent_days,
         ignore_duplicates=False,
