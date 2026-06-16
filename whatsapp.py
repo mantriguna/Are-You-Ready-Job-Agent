@@ -1,4 +1,5 @@
 import os
+import re
 from dataclasses import dataclass
 
 import httpx
@@ -20,6 +21,12 @@ def _raise_for_meta_error(response: httpx.Response) -> None:
         except ValueError:
             detail = response.text
         raise RuntimeError(f"Meta WhatsApp API error: {detail}") from exc
+
+
+def _clean_template_parameter(value: str) -> str:
+    clean = re.sub(r"[\r\n\t]+", " | ", str(value))
+    clean = re.sub(r"\s{2,}", " ", clean).strip()
+    return clean[:1024]
 
 
 def extract_text_messages(payload: dict) -> list[IncomingTextMessage]:
@@ -98,7 +105,7 @@ async def send_template_message(
                 {
                     "type": "body",
                     "parameters": [
-                        {"type": "text", "text": str(parameter)[:1024]}
+                        {"type": "text", "text": _clean_template_parameter(parameter)}
                         for parameter in body_parameters
                     ],
                 }

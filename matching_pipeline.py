@@ -332,6 +332,7 @@ async def run_user_job_search(
         )
 
     latest_alerts: list[dict] = []
+    pending_sent_jobs: list[dict[str, str | int]] = []
     summary_template_name = os.getenv("WHATSAPP_DAILY_SUMMARY_TEMPLATE_NAME")
 
     for job_number, (job, evaluation) in enumerate(selected_alerts, start=1):
@@ -400,13 +401,15 @@ async def run_user_job_search(
                 action = "send_failed"
                 error = str(exc)
         elif not dry_run and summary_template_name:
-            save_sent_job(
-                whatsapp_number=whatsapp_number,
-                job_id=job.job_id,
-                job_title=job.title,
-                company_name=job.company,
-                job_url=str(job.url),
-                match_percentage=evaluation.match_percentage,
+            pending_sent_jobs.append(
+                {
+                    "whatsapp_number": whatsapp_number,
+                    "job_id": job.job_id,
+                    "job_title": job.title,
+                    "company_name": job.company,
+                    "job_url": str(job.url),
+                    "match_percentage": evaluation.match_percentage,
+                }
             )
 
         latest_alerts.append(
@@ -457,6 +460,8 @@ async def run_user_job_search(
                         summary_chunk,
                     ],
                 )
+            for sent_job in pending_sent_jobs:
+                save_sent_job(**sent_job)
         except Exception as exc:
             logger.exception("Failed to send daily summary template.")
             for result in results:
