@@ -139,7 +139,7 @@ def evaluate_job_match(
     job_description: str,
     resume_text: str | None = None,
 ) -> JobMatchEvaluation:
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite")
     candidate_context = resume_text or experience_summary
     prompt = f"""
