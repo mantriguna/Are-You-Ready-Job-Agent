@@ -94,6 +94,10 @@ jobs:
           MAX_EVALUATIONS_PER_RUN: ${{ github.event.inputs.max_evaluations || '25' }}
           FILL_DAILY_LIMIT_WITH_LOWER_MATCHES: "true"
           SEND_ALL_ABOVE_THRESHOLD_MATCHES: "true"
+          CHAT_LATEST_JOB_LIMIT: "15"
+          CHAT_LATEST_JOB_MAX_EVALUATIONS: "25"
+          CHAT_LATEST_JOB_THRESHOLD: "75"
+          CHAT_LATEST_JOB_RECENT_DAYS: "1"
           SENT_JOB_RETENTION_DAYS: "60"
           SEND_NO_RESULT_SUMMARY: "true"
           DRY_RUN_INPUT: ${{ github.event.inputs.dry_run || 'false' }}

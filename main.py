@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 from ai_engine import JobMatchEvaluation, evaluate_job_match
-from chat_handler import build_chat_reply
+from chat_handler import build_chat_reply, is_latest_jobs_request
 from database import (
     get_admin_status,
     get_supabase_client,
@@ -66,6 +66,47 @@ def _public_generated_file_url(path: str | None) -> str | None:
     return f"{base_url.rstrip('/')}/generated-resumes/{filename}"
 
 
+async def _run_latest_jobs_from_chat(whatsapp_number: str) -> None:
+    try:
+        result = await run_user_job_search(
+            whatsapp_number=whatsapp_number,
+            limit=int(os.getenv("CHAT_LATEST_JOB_LIMIT", "15")),
+            threshold=int(os.getenv("CHAT_LATEST_JOB_THRESHOLD", "75")),
+            dry_run=False,
+            preferred_filters=True,
+            recent_days=int(os.getenv("CHAT_LATEST_JOB_RECENT_DAYS", "1")),
+            ignore_duplicates=False,
+            use_template_alert=True,
+            max_evaluations=int(os.getenv("CHAT_LATEST_JOB_MAX_EVALUATIONS", "25")),
+        )
+        if result.alert_count > 0:
+            return
+
+        no_match_template = os.getenv("WHATSAPP_NO_MATCH_TEMPLATE_NAME")
+        if no_match_template:
+            await send_template_message(
+                whatsapp_number=whatsapp_number,
+                template_name=no_match_template,
+                language_code=os.getenv("WHATSAPP_TEMPLATE_LANGUAGE", "en_US"),
+                body_parameters=["the last 24 hours", "now"],
+            )
+            return
+
+        await send_text_message(
+            whatsapp_number,
+            (
+                "I checked jobs posted in the last 24 hours. No new non-duplicate "
+                "matches passed your filters right now."
+            ),
+        )
+    except Exception as exc:
+        logger.exception("Failed to run latest jobs from chat for %s", whatsapp_number)
+        await send_text_message(
+            whatsapp_number,
+            f"I could not complete the latest job check right now. Error: {exc}",
+        )
+
+
 @app.get("/webhook")
 async def verify_webhook(
     hub_mode: str | None = Query(None, alias="hub.mode"),
@@ -82,13 +123,24 @@ async def verify_webhook(
 
 
 @app.post("/webhook")
-async def receive_whatsapp_message(request: Request):
+async def receive_whatsapp_message(request: Request, background_tasks: BackgroundTasks):
     """Receive incoming WhatsApp webhook events."""
     payload = await request.json()
     logger.info("Received WhatsApp webhook payload: %s", payload)
 
     for message in extract_text_messages(payload):
         profile = get_user_profile(message.whatsapp_number)
+        if profile and is_latest_jobs_request(message.text):
+            await send_text_message(
+                message.whatsapp_number,
+                (
+                    "Checking latest jobs from the last 24 hours now. I will send a "
+                    "summary if new matches are found, or a no-match update if nothing new passes."
+                ),
+            )
+            background_tasks.add_task(_run_latest_jobs_from_chat, message.whatsapp_number)
+            continue
+
         chat_step = build_chat_reply(profile, message.text)
         if chat_step.profile_updates:
             save_user_profile(message.whatsapp_number, chat_step.profile_updates)

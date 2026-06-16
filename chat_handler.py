@@ -24,7 +24,8 @@ def _menu() -> str:
         "2. EDIT profile\n"
         "3. RESET profile\n"
         "4. job 1 details\n"
-        "5. job 1 resume\n\n"
+        "5. job 1 resume\n"
+        "6. LATEST jobs - check jobs posted in the last 24 hours now\n\n"
         "For any alert, use: job 11 details or job 11 resume."
     )
 
@@ -54,6 +55,28 @@ def _is_greeting(text: str) -> bool:
         "khana khaya?",
     }
     return normalized in greetings
+
+
+def is_latest_jobs_request(text: str) -> bool:
+    normalized = " ".join(text.strip().lower().split())
+    latest_requests = {
+        "6",
+        "latest",
+        "latest job",
+        "latest jobs",
+        "get latest job",
+        "get latest jobs",
+        "check latest job",
+        "check latest jobs",
+        "today job",
+        "today jobs",
+        "new job",
+        "new jobs",
+        "run job search",
+        "search jobs now",
+        "check jobs now",
+    }
+    return normalized in latest_requests
 
 
 def _is_leave(text: str) -> bool:
