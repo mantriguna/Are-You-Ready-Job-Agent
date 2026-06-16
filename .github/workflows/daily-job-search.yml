@@ -75,8 +75,9 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: gemini-2.5-flash
+          GEMINI_MODEL: gemini-2.5-flash-lite
           GEMINI_FALLBACK_MODEL: gemini-2.5-flash-lite
+          ENABLE_HEURISTIC_AI_FALLBACK: "true"
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           META_PHONE_NUMBER_ID: ${{ secrets.META_PHONE_NUMBER_ID }}
           META_WABA_ID: ${{ secrets.META_WABA_ID }}
