@@ -120,21 +120,19 @@ def _format_daily_summary_chunks(alerts: list[dict]) -> list[str]:
     for alert in alerts:
         location = (alert.get("location") or "").split(",")[0].strip()
         location_text = f" | {location}" if location else ""
-        line = _compact_text(
-            (
-                f"{alert['job_number']}. {alert['company']} | {alert['title']} "
-                f"| {alert['match_percentage']}%{location_text}"
-            ),
-            120,
+        title = _compact_text(str(alert["title"]), 80)
+        line = (
+            f"{alert['job_number']}. {alert['company']} | {title} "
+            f"| {alert['match_percentage']}%{location_text} | Link: {alert['job_url']}"
         )
-        next_summary = "\n".join([*lines, line])
+        next_summary = " || ".join([*lines, line])
         if len(next_summary) > max_summary_chars and lines:
-            chunks.append("\n".join(lines))
+            chunks.append(" || ".join(lines))
             lines = [line]
             continue
         lines.append(line)
     if lines:
-        chunks.append("\n".join(lines))
+        chunks.append(" || ".join(lines))
     return chunks
 
 
