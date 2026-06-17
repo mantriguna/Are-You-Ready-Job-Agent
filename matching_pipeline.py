@@ -116,11 +116,11 @@ def _format_daily_summary(alerts: list[dict]) -> str:
 def _format_daily_summary_chunks(alerts: list[dict]) -> list[str]:
     lines = []
     chunks: list[str] = []
-    max_summary_chars = 950
+    max_summary_chars = 760
     for alert in alerts:
         location = (alert.get("location") or "").split(",")[0].strip()
         location_text = f" | {location}" if location else ""
-        title = _compact_text(str(alert["title"]), 80)
+        title = _compact_text(str(alert["title"]), 65)
         line = (
             f"{alert['job_number']}. {alert['company']} | {title} "
             f"| {alert['match_percentage']}%{location_text} | Link: {alert['job_url']}"
