@@ -24,6 +24,7 @@ from scheduler import (
 )
 from whatsapp import (
     extract_text_messages,
+    mark_message_read_with_typing,
     send_document_message,
     send_template_message,
     send_text_message,
@@ -157,6 +158,15 @@ async def receive_whatsapp_message(request: Request, background_tasks: Backgroun
     logger.info("Received WhatsApp webhook payload: %s", payload)
 
     for message in extract_text_messages(payload):
+        try:
+            await mark_message_read_with_typing(message.message_id)
+        except Exception as exc:
+            logger.warning(
+                "Could not send WhatsApp typing indicator for message %s: %s",
+                message.message_id,
+                exc,
+            )
+
         profile = get_user_profile(message.whatsapp_number)
         if profile and is_latest_jobs_request(message.text):
             await send_text_message(

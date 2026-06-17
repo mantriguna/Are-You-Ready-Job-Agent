@@ -54,6 +54,29 @@ def extract_text_messages(payload: dict) -> list[IncomingTextMessage]:
     return incoming_messages
 
 
+async def mark_message_read_with_typing(message_id: str) -> dict:
+    access_token = os.getenv("META_ACCESS_TOKEN")
+    phone_number_id = os.getenv("META_PHONE_NUMBER_ID")
+    api_version = os.getenv("META_GRAPH_API_VERSION", "v25.0")
+
+    if not access_token or not phone_number_id:
+        raise RuntimeError("Missing META_ACCESS_TOKEN or META_PHONE_NUMBER_ID.")
+
+    url = f"https://graph.facebook.com/{api_version}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": message_id,
+        "typing_indicator": {"type": "text"},
+    }
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.post(url, json=payload, headers=headers)
+        _raise_for_meta_error(response)
+        return response.json()
+
+
 async def send_text_message(whatsapp_number: str, body: str) -> dict:
     access_token = os.getenv("META_ACCESS_TOKEN")
     phone_number_id = os.getenv("META_PHONE_NUMBER_ID")
