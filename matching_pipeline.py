@@ -182,6 +182,7 @@ async def run_user_job_search(
     target_pool_size = max_evaluations or evaluation_pool_limit
     fetch_limit = max(limit, target_pool_size, 1)
     scraped_jobs: list[JobListing] = []
+    rapidapi_jobs: list[JobListing] = []
     seen_job_ids: set[str] = set()
     source_count = 0
     for search_query in search_queries:
@@ -191,6 +192,7 @@ async def run_user_job_search(
             limit=fetch_limit,
             preferred_filters=preferred_filters,
             recent_days=recent_days,
+            include_rapidapi=False,
         )
         source_count = max(source_count, query_result.source_count)
         for job in query_result.jobs:
@@ -201,6 +203,28 @@ async def run_user_job_search(
         if len(scraped_jobs) >= target_pool_size:
             break
 
+    if os.getenv("RAPIDAPI_KEY"):
+        rapidapi_query = " OR ".join(search_queries[:5])
+        rapidapi_result = await fetch_jobs(
+            query=rapidapi_query,
+            location="India",
+            limit=max(fetch_limit, 25),
+            preferred_filters=preferred_filters,
+            recent_days=recent_days,
+            include_amazon=False,
+            include_rapidapi=True,
+            include_boards=False,
+            apply_query_filter=False,
+        )
+        source_count += rapidapi_result.source_count
+        rapidapi_jobs = sorted(
+            rapidapi_result.jobs,
+            key=lambda job: "linkedin" not in job.source.lower(),
+        )
+        rapidapi_jobs = [
+            job for job in rapidapi_jobs if job.job_id not in seen_job_ids
+        ]
+
     if not scraped_jobs:
         query_result = await fetch_jobs(
             query=target_title,
@@ -208,9 +232,22 @@ async def run_user_job_search(
             limit=fetch_limit,
             preferred_filters=preferred_filters,
             recent_days=recent_days,
+            include_rapidapi=False,
         )
         source_count = max(source_count, query_result.source_count)
         scraped_jobs = query_result.jobs
+
+    if rapidapi_jobs:
+        rapidapi_reserve = min(
+            len(rapidapi_jobs),
+            max(3, target_pool_size // 3),
+        )
+        reserved_jobs = rapidapi_jobs[:rapidapi_reserve]
+        remaining_jobs = [
+            *scraped_jobs,
+            *rapidapi_jobs[rapidapi_reserve:],
+        ]
+        scraped_jobs = [*reserved_jobs, *remaining_jobs]
 
     scraped = JobSearchResult(
         query=target_title,

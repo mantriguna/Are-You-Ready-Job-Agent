@@ -1,5 +1,7 @@
 import asyncio
+import logging
 import os
+from collections.abc import Awaitable
 from datetime import UTC, datetime
 from html import unescape
 from re import findall, search, sub
@@ -7,6 +9,9 @@ from urllib.parse import quote
 
 import httpx
 from pydantic import BaseModel, Field, HttpUrl
+
+
+logger = logging.getLogger("ai-job-agent")
 
 
 class JobListing(BaseModel):
@@ -381,37 +386,59 @@ async def fetch_jobs(
     limit: int = 25,
     preferred_filters: bool = False,
     recent_days: int | None = None,
+    include_amazon: bool | None = None,
+    include_rapidapi: bool | None = None,
+    include_boards: bool = True,
+    apply_query_filter: bool = True,
 ) -> JobSearchResult:
-    greenhouse_boards = _csv_env("GREENHOUSE_BOARD_TOKENS")
-    lever_companies = _csv_env("LEVER_COMPANY_SLUGS")
-    ashby_boards = _csv_env("ASHBY_BOARD_NAMES")
+    greenhouse_boards = _csv_env("GREENHOUSE_BOARD_TOKENS") if include_boards else []
+    lever_companies = _csv_env("LEVER_COMPANY_SLUGS") if include_boards else []
+    ashby_boards = _csv_env("ASHBY_BOARD_NAMES") if include_boards else []
 
-    include_amazon = os.getenv("ENABLE_AMAZON_JOBS", "true").lower() == "true"
-    include_rapidapi = bool(os.getenv("RAPIDAPI_KEY"))
+    if include_amazon is None:
+        include_amazon = os.getenv("ENABLE_AMAZON_JOBS", "true").lower() == "true"
+    if include_rapidapi is None:
+        include_rapidapi = bool(os.getenv("RAPIDAPI_KEY"))
     source_count = len(greenhouse_boards) + len(lever_companies) + len(ashby_boards)
     if include_amazon:
         source_count += 1
     if include_rapidapi:
         source_count += 1
-    tasks = []
+    tasks: list[tuple[str, Awaitable[list[JobListing]]]] = []
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         if include_amazon:
-            tasks.append(_fetch_amazon_jobs(client, query=query, limit=limit))
+            tasks.append(("amazon", _fetch_amazon_jobs(client, query=query, limit=limit)))
         if include_rapidapi:
-            tasks.append(_fetch_rapidapi_jobs(client, query=query, limit=limit))
-        tasks.extend(_fetch_greenhouse_board(client, board) for board in greenhouse_boards)
-        tasks.extend(_fetch_lever_board(client, slug) for slug in lever_companies)
-        tasks.extend(_fetch_ashby_board(client, board) for board in ashby_boards)
+            tasks.append(("rapidapi", _fetch_rapidapi_jobs(client, query=query, limit=limit)))
+        tasks.extend(
+            (f"greenhouse:{board}", _fetch_greenhouse_board(client, board))
+            for board in greenhouse_boards
+        )
+        tasks.extend(
+            (f"lever:{slug}", _fetch_lever_board(client, slug))
+            for slug in lever_companies
+        )
+        tasks.extend(
+            (f"ashby:{board}", _fetch_ashby_board(client, board))
+            for board in ashby_boards
+        )
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(
+            *(task for _, task in tasks),
+            return_exceptions=True,
+        )
 
     jobs: list[JobListing] = []
-    for result in results:
+    for (source_name, _), result in zip(tasks, results):
         if isinstance(result, Exception):
+            logger.warning("Job source %s failed: %s", source_name, result)
             continue
         jobs.extend(result)
 
-    filtered_jobs = [job for job in jobs if _matches_filters(job, query=query, location=location)]
+    filter_query = query if apply_query_filter else None
+    filtered_jobs = [
+        job for job in jobs if _matches_filters(job, query=filter_query, location=location)
+    ]
     if preferred_filters:
         filtered_jobs = [
             job for job in filtered_jobs if _passes_preferred_filters(job, recent_days)
