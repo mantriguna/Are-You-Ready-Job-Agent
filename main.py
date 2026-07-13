@@ -312,6 +312,29 @@ async def database_health_check():
         )
 
 
+@app.get("/cron/keepalive-supabase")
+async def keepalive_supabase(token: str | None = None):
+    cron_secret = os.getenv("CRON_SECRET")
+    if cron_secret and token != cron_secret:
+        raise HTTPException(status_code=403, detail="Invalid cron token.")
+
+    try:
+        supabase = get_supabase_client()
+        result = supabase.table("user_profiles").select("whatsapp_number").limit(1).execute()
+        return {
+            "status": "ok",
+            "database": "connected",
+            "sample_count": len(result.data),
+        }
+    except Exception as exc:
+        logger.warning("Supabase keep-alive ping failed: %s", exc)
+        return {
+            "status": "degraded",
+            "database": "unavailable",
+            "error": str(exc)[:300],
+        }
+
+
 @app.get("/health/meta")
 async def meta_health_check(token: str | None = None):
     cron_secret = os.getenv("CRON_SECRET")

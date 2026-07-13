@@ -1,0 +1,32 @@
+name: Supabase Keep Alive
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Touch Supabase twice daily so the free project does not look inactive.
+    - cron: "0 3,15 * * *"
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: supabase-keepalive
+      cancel-in-progress: false
+
+    steps:
+      - name: Validate cron secret
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET GitHub Actions secret is missing"
+            exit 1
+          fi
+
+      - name: Ping Supabase through Render
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail --show-error --silent \
+            "https://are-you-ready-job-agent.onrender.com/cron/keepalive-supabase?token=${CRON_SECRET}"

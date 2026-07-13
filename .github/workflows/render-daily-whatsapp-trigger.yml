@@ -28,5 +28,9 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
+          curl --show-error --silent \
+            "https://are-you-ready-job-agent.onrender.com/cron/keepalive-supabase?token=${CRON_SECRET}"
+          echo
+          sleep 10
           curl --fail --show-error --silent \
             "https://are-you-ready-job-agent.onrender.com/cron/daily-whatsapp?token=${CRON_SECRET}&limit=15&max_evaluations=25&threshold=75&recent_days=1"
