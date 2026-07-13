@@ -50,6 +50,13 @@ class JobMatchRequest(BaseModel):
     job_description: str = Field(min_length=1)
 
 
+async def _safe_send_text_message(whatsapp_number: str, text: str) -> None:
+    try:
+        await send_text_message(whatsapp_number, text)
+    except Exception as exc:
+        logger.warning("Could not send WhatsApp text message to %s: %s", whatsapp_number, exc)
+
+
 def _mask_secret(value: str | None) -> str | None:
     if not value:
         return None
@@ -131,7 +138,7 @@ async def _run_latest_jobs_from_chat(whatsapp_number: str) -> None:
         )
     except Exception as exc:
         logger.exception("Failed to run latest jobs from chat for %s", whatsapp_number)
-        await send_text_message(
+        await _safe_send_text_message(
             whatsapp_number,
             f"I could not complete the latest job check right now. Error: {exc}",
         )
@@ -175,7 +182,7 @@ async def receive_whatsapp_message(request: Request, background_tasks: Backgroun
                 "Database unavailable while handling WhatsApp message from %s",
                 message.whatsapp_number,
             )
-            await send_text_message(
+            await _safe_send_text_message(
                 message.whatsapp_number,
                 (
                     "I am online, but my database connection is unavailable right now. "
@@ -184,7 +191,7 @@ async def receive_whatsapp_message(request: Request, background_tasks: Backgroun
             )
             continue
         if profile and is_latest_jobs_request(message.text):
-            await send_text_message(
+            await _safe_send_text_message(
                 message.whatsapp_number,
                 (
                     "Checking latest jobs from the last 24 hours now. I will send a "
@@ -196,18 +203,39 @@ async def receive_whatsapp_message(request: Request, background_tasks: Backgroun
 
         chat_step = build_chat_reply(profile, message.text)
         if chat_step.profile_updates:
-            save_user_profile(message.whatsapp_number, chat_step.profile_updates)
+            try:
+                save_user_profile(message.whatsapp_number, chat_step.profile_updates)
+            except Exception as exc:
+                logger.exception(
+                    "Database unavailable while saving WhatsApp profile for %s",
+                    message.whatsapp_number,
+                )
+                await _safe_send_text_message(
+                    message.whatsapp_number,
+                    (
+                        "I received your message, but I cannot save profile changes because "
+                        f"the database is unavailable right now: {exc}"
+                    ),
+                )
+                continue
         document_url = _public_generated_file_url(chat_step.document_path)
         if document_url:
-            await send_document_message(
-                whatsapp_number=message.whatsapp_number,
-                document_url=document_url,
-                filename=Path(chat_step.document_path or "tailored_resume.txt").name,
-                caption=chat_step.reply[:1024],
-            )
+            try:
+                await send_document_message(
+                    whatsapp_number=message.whatsapp_number,
+                    document_url=document_url,
+                    filename=Path(chat_step.document_path or "tailored_resume.txt").name,
+                    caption=chat_step.reply[:1024],
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Could not send WhatsApp document to %s: %s",
+                    message.whatsapp_number,
+                    exc,
+                )
             continue
         for start in range(0, len(chat_step.reply), WHATSAPP_TEXT_CHUNK_SIZE):
-            await send_text_message(
+            await _safe_send_text_message(
                 message.whatsapp_number,
                 chat_step.reply[start : start + WHATSAPP_TEXT_CHUNK_SIZE],
             )
@@ -260,7 +288,28 @@ async def admin_status(token: str | None = None):
     if cron_secret and token != cron_secret:
         raise HTTPException(status_code=403, detail="Invalid admin token.")
 
-    status = get_admin_status()
+    try:
+        status = get_admin_status()
+    except Exception as exc:
+        logger.exception("Admin status failed because database is unavailable.")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "database unavailable",
+                "error": str(exc)[:300],
+                "integrations": {
+                    "gemini_configured": bool(os.getenv("GEMINI_API_KEY")),
+                    "meta_template_configured": bool(os.getenv("WHATSAPP_JOB_TEMPLATE_NAME")),
+                    "rapidapi_configured": bool(os.getenv("RAPIDAPI_KEY")),
+                    "daily_summary_template_configured": bool(
+                        os.getenv("WHATSAPP_DAILY_SUMMARY_TEMPLATE_NAME")
+                    ),
+                    "no_match_template_configured": bool(
+                        os.getenv("WHATSAPP_NO_MATCH_TEMPLATE_NAME")
+                    ),
+                },
+            },
+        )
     status["integrations"] = {
         "gemini_configured": bool(os.getenv("GEMINI_API_KEY")),
         "meta_template_configured": bool(os.getenv("WHATSAPP_JOB_TEMPLATE_NAME")),
@@ -302,7 +351,13 @@ async def test_job_template(
 
 @app.post("/ai/evaluate-job", response_model=JobMatchEvaluation)
 async def evaluate_job(request: JobMatchRequest):
-    profile = get_user_profile(request.whatsapp_number)
+    try:
+        profile = get_user_profile(request.whatsapp_number)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Database unavailable while loading profile: {exc}",
+        ) from exc
     if not profile:
         raise HTTPException(status_code=404, detail="WhatsApp profile not found.")
 
@@ -353,6 +408,9 @@ async def run_jobs_for_user(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("User job search failed.")
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.api_route("/execute-daily-search", methods=["GET", "POST"], response_model=ScheduledRunResult)
@@ -376,9 +434,20 @@ async def execute_daily_search(
         raise HTTPException(status_code=403, detail="Invalid cron token.")
 
     if background:
-        timezone_name, current_hour, profiles = get_profiles_for_current_hour(
-            override_hour=override_hour
-        )
+        try:
+            timezone_name, current_hour, profiles = get_profiles_for_current_hour(
+                override_hour=override_hour
+            )
+        except Exception as exc:
+            logger.exception("Could not start background daily search.")
+            return ScheduledRunResult(
+                timezone=os.getenv("APP_TIMEZONE", "Asia/Kolkata"),
+                current_hour=override_hour if override_hour is not None else -1,
+                matched_profile_count=0,
+                dry_run=dry_run,
+                runs=[],
+                errors=[{"whatsapp_number": "*", "error": f"Database unavailable: {exc}"}],
+            )
         background_tasks.add_task(
             run_scheduled_job_search,
             dry_run=dry_run,

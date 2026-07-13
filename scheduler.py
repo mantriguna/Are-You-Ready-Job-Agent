@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -14,6 +15,8 @@ from database import (
 from matching_pipeline import UserJobRunResult, run_user_job_search
 from whatsapp import send_template_message, send_text_message
 
+logger = logging.getLogger("ai-job-agent")
+
 
 class ScheduledRunResult(BaseModel):
     timezone: str
@@ -22,6 +25,23 @@ class ScheduledRunResult(BaseModel):
     dry_run: bool
     runs: list[UserJobRunResult]
     errors: list[dict[str, str]]
+
+
+def _scheduled_error_result(
+    *,
+    timezone_name: str | None = None,
+    current_hour: int = -1,
+    dry_run: bool,
+    error: Exception | str,
+) -> ScheduledRunResult:
+    return ScheduledRunResult(
+        timezone=timezone_name or os.getenv("APP_TIMEZONE", "Asia/Kolkata"),
+        current_hour=current_hour,
+        matched_profile_count=0,
+        dry_run=dry_run,
+        runs=[],
+        errors=[{"whatsapp_number": "*", "error": str(error)}],
+    )
 
 
 def _profile_alert_hour(profile: dict) -> int | None:
@@ -71,26 +91,48 @@ async def run_scheduled_job_search(
     send_no_results: bool | None = None,
     max_evaluations: int | None = None,
 ) -> ScheduledRunResult:
-    timezone_name, current_hour, profiles = get_profiles_for_current_hour(
-        override_hour=override_hour
-    )
+    try:
+        timezone_name, current_hour, profiles = get_profiles_for_current_hour(
+            override_hour=override_hour
+        )
+    except Exception as exc:
+        logger.exception("Scheduled search could not read ready user profiles.")
+        return _scheduled_error_result(
+            current_hour=override_hour if override_hour is not None else -1,
+            dry_run=dry_run,
+            error=f"Database unavailable while loading profiles: {exc}",
+        )
+
     max_concurrency = int(os.getenv("SCHEDULER_MAX_CONCURRENCY", "3"))
     semaphore = asyncio.Semaphore(max_concurrency)
     runs: list[UserJobRunResult] = []
     errors: list[dict[str, str]] = []
-    run_id = create_cron_run(
-        timezone=timezone_name,
-        current_hour=current_hour,
-        matched_profile_count=len(profiles),
-        dry_run=dry_run,
-    )
+    try:
+        run_id = create_cron_run(
+            timezone=timezone_name,
+            current_hour=current_hour,
+            matched_profile_count=len(profiles),
+            dry_run=dry_run,
+        )
+    except Exception as exc:
+        logger.exception("Scheduled search could not create cron run log.")
+        run_id = None
+        errors.append({"whatsapp_number": "*", "error": f"Cron log unavailable: {exc}"})
+
     should_use_template_alert = (
         use_template_alert
         if use_template_alert is not None
         else os.getenv("USE_WHATSAPP_TEMPLATES", "true").lower() == "true"
     )
     cleanup_days = int(os.getenv("SENT_JOB_RETENTION_DAYS", "60"))
-    cleanup_old_sent_jobs(cleanup_days)
+    try:
+        cleanup_old_sent_jobs(cleanup_days)
+    except Exception as exc:
+        logger.warning("Could not clean old sent jobs: %s", exc)
+        errors.append(
+            {"whatsapp_number": "*", "error": f"Sent job cleanup unavailable: {exc}"}
+        )
+
     if max_evaluations is None:
         max_evaluations = int(os.getenv("MAX_EVALUATIONS_PER_RUN", "3"))
 
@@ -138,13 +180,17 @@ async def run_scheduled_job_search(
                 )
 
     await asyncio.gather(*(run_one(profile) for profile in profiles))
-    finish_cron_run(
-        run_id,
-        status="failed" if errors else "completed",
-        jobs_scraped=sum(run.scraped_count for run in runs),
-        jobs_sent=sum(run.alert_count for run in runs),
-        errors=errors,
-    )
+    try:
+        finish_cron_run(
+            run_id,
+            status="failed" if errors else "completed",
+            jobs_scraped=sum(run.scraped_count for run in runs),
+            jobs_sent=sum(run.alert_count for run in runs),
+            errors=errors,
+        )
+    except Exception as exc:
+        logger.warning("Could not finish cron run log: %s", exc)
+        errors.append({"whatsapp_number": "*", "error": f"Cron finish unavailable: {exc}"})
 
     return ScheduledRunResult(
         timezone=timezone_name,
