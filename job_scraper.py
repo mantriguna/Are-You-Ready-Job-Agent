@@ -541,11 +541,14 @@ async def _fetch_workday_jobs(
         if max_pages and (offset // page_size) >= max_pages:
             logger.warning("%s pagination stopped by MAX_PAGES_PER_SOURCE=%s", source.company_name, max_pages)
             break
+        search_text = query or "software"
+        if "india" not in search_text.lower():
+            search_text = f"India {search_text}"
         payload = {
             "appliedFacets": {},
             "limit": page_size,
             "offset": offset,
-            "searchText": query or "software",
+            "searchText": search_text,
         }
         response = await client.post(
             url,
