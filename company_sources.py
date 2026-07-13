@@ -23,6 +23,7 @@ class CompanySource:
     enabled: bool = True
     priority: int = 100
     source_type: str = "generic_html"
+    source_key: str | None = None
     allowed_countries: list[str] = field(default_factory=lambda: ["India"])
     preferred_locations: list[str] = field(default_factory=lambda: DEFAULT_PREFERRED_LOCATIONS)
     official_domains: list[str] = field(default_factory=list)
@@ -69,18 +70,18 @@ DEFAULT_COMPANY_SOURCES: list[CompanySource] = [
     CompanySource("Broadcom", "https://broadcom.wd1.myworkdayjobs.com/External_Career", priority=34, source_type="workday", official_domains=["broadcom.wd1.myworkdayjobs.com"]),
     CompanySource("Apple India", "https://jobs.apple.com/en-in/search?location=india-INDC", priority=35, official_domains=["jobs.apple.com"]),
     CompanySource("Flipkart", "https://www.flipkartcareers.com/", priority=40, official_domains=["flipkartcareers.com"]),
-    CompanySource("PhonePe", "https://www.phonepe.com/careers/", priority=41, official_domains=["phonepe.com"]),
-    CompanySource("Razorpay", "https://razorpay.com/careers/", priority=42, official_domains=["razorpay.com"]),
-    CompanySource("Meesho", "https://www.meesho.io/jobs", priority=43, official_domains=["meesho.io"]),
+    CompanySource("PhonePe", "https://www.phonepe.com/careers/", priority=41, source_type="greenhouse", source_key="phonepe", official_domains=["phonepe.com"]),
+    CompanySource("Razorpay", "https://razorpay.com/careers/", priority=42, source_type="greenhouse", source_key="razorpaysoftwareprivatelimited", official_domains=["razorpay.com"]),
+    CompanySource("Meesho", "https://www.meesho.io/jobs", priority=43, source_type="lever", source_key="meesho", official_domains=["meesho.io"]),
     CompanySource("Swiggy", "https://careers.swiggy.com/", priority=44, official_domains=["careers.swiggy.com"]),
     CompanySource("Zomato", "https://www.zomato.com/careers", priority=45, official_domains=["zomato.com"]),
-    CompanySource("CRED", "https://careers.cred.club/", priority=46, official_domains=["careers.cred.club"]),
-    CompanySource("Groww", "https://groww.in/careers", priority=47, official_domains=["groww.in"]),
-    CompanySource("BrowserStack", "https://www.browserstack.com/careers", priority=48, official_domains=["browserstack.com"]),
-    CompanySource("Postman", "https://www.postman.com/company/careers/", priority=49, official_domains=["postman.com"]),
+    CompanySource("CRED", "https://careers.cred.club/", priority=46, source_type="lever", source_key="cred", official_domains=["careers.cred.club"]),
+    CompanySource("Groww", "https://groww.in/careers", priority=47, source_type="greenhouse", source_key="groww", official_domains=["groww.in"]),
+    CompanySource("BrowserStack", "https://www.browserstack.com/careers", priority=48, source_type="workday", source_key="https://browserstack.wd3.myworkdayjobs.com/External", official_domains=["browserstack.com"]),
+    CompanySource("Postman", "https://www.postman.com/company/careers/", priority=49, source_type="greenhouse", source_key="postman", official_domains=["postman.com"]),
     CompanySource("Freshworks", "https://www.freshworks.com/company/careers/", priority=50, official_domains=["freshworks.com"]),
     CompanySource("Zoho", "https://www.zoho.com/careers/", priority=51, official_domains=["zoho.com"]),
-    CompanySource("Dream Sports", "https://www.dreamsports.group/careers/", priority=52, official_domains=["dreamsports.group"]),
+    CompanySource("Dream Sports", "https://www.dreamsports.group/careers/", priority=52, source_type="lever", source_key="dreamsports", official_domains=["dreamsports.group"]),
     CompanySource("Juspay", "https://juspay.io/careers", priority=53, official_domains=["juspay.io"]),
     CompanySource("Zepto", "https://www.zeptonow.com/careers", priority=54, official_domains=["zeptonow.com"]),
 ]

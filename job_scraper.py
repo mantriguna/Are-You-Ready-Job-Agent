@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import json
 import logging
 import os
 from collections.abc import Awaitable
@@ -122,12 +123,44 @@ def _matches_filters(job: JobListing, query: str | None, location: str | None) -
         return False
 
     if location and location.lower() == "india":
-        if "india" not in searchable_text and ", ind" not in searchable_text:
+        if not _is_india_job(job):
             return False
     elif location and location.lower() not in searchable_text:
         return False
 
     return True
+
+
+def _is_india_text(value: str | None) -> bool:
+    if not value:
+        return False
+    text = value.lower()
+    india_markers = [
+        "india",
+        ", ind",
+        "bengaluru",
+        "bangalore",
+        "hyderabad",
+        "chennai",
+        "pune",
+        "gurugram",
+        "gurgaon",
+        "noida",
+        "mumbai",
+        "karnataka",
+        "telangana",
+        "tamil nadu",
+        "maharashtra",
+        "uttar pradesh",
+        "haryana",
+        "remote - india",
+        "remote india",
+    ]
+    return any(marker in text for marker in india_markers)
+
+
+def _is_india_job(job: JobListing) -> bool:
+    return _is_india_text(" ".join([job.location or "", job.description, str(job.url)]))
 
 
 def _parse_amazon_posted_date(value: str | None) -> datetime | None:
@@ -263,6 +296,25 @@ async def _fetch_greenhouse_board(
     return jobs
 
 
+async def _fetch_greenhouse_source(
+    client: httpx.AsyncClient,
+    source: CompanySource,
+) -> list[JobListing]:
+    board_token = source.source_key or source.company_name.lower().replace(" ", "")
+    jobs = await _fetch_greenhouse_board(client, board_token)
+    normalized_jobs: list[JobListing] = []
+    for job in jobs:
+        updated = job.model_copy(
+            update={
+                "job_id": f"greenhouse:{source.company_name.lower()}:{job.job_id.split(':')[-1]}",
+                "company": source.company_name,
+            }
+        )
+        if _is_india_job(updated):
+            normalized_jobs.append(updated)
+    return normalized_jobs
+
+
 async def _fetch_lever_board(
     client: httpx.AsyncClient,
     company_slug: str,
@@ -293,6 +345,25 @@ async def _fetch_lever_board(
             )
         )
     return jobs
+
+
+async def _fetch_lever_source(
+    client: httpx.AsyncClient,
+    source: CompanySource,
+) -> list[JobListing]:
+    company_slug = source.source_key or source.company_name.lower().replace(" ", "")
+    jobs = await _fetch_lever_board(client, company_slug)
+    normalized_jobs: list[JobListing] = []
+    for job in jobs:
+        updated = job.model_copy(
+            update={
+                "job_id": f"lever:{source.company_name.lower()}:{job.job_id.split(':')[-1]}",
+                "company": source.company_name,
+            }
+        )
+        if _is_india_job(updated):
+            normalized_jobs.append(updated)
+    return normalized_jobs
 
 
 async def _fetch_ashby_board(
@@ -407,7 +478,8 @@ async def _fetch_amazon_jobs(
 
 
 def _workday_endpoint(source: CompanySource) -> tuple[str, str] | None:
-    parsed = urlparse(source.careers_url)
+    workday_url = source.source_key or source.careers_url
+    parsed = urlparse(workday_url)
     site = parsed.path.strip("/").split("/")[0]
     if not parsed.netloc or not site:
         return None
@@ -424,6 +496,7 @@ async def _fetch_workday_jobs(
     if not endpoint:
         return []
     url, site = endpoint
+    workday_base_url = source.source_key or source.careers_url
     jobs: list[JobListing] = []
     max_pages = _int_env("MAX_PAGES_PER_SOURCE", 0)
     page_size = 20
@@ -435,7 +508,7 @@ async def _fetch_workday_jobs(
             logger.warning("%s pagination stopped by MAX_PAGES_PER_SOURCE=%s", source.company_name, max_pages)
             break
         payload = {
-            "appliedFacets": {"locations": ["India"]},
+            "appliedFacets": {},
             "limit": page_size,
             "offset": offset,
             "searchText": query or "software",
@@ -466,7 +539,7 @@ async def _fetch_workday_jobs(
             external_path = item.get("externalPath")
             if not external_path:
                 continue
-            job_url = urljoin(source.careers_url.rstrip("/") + "/", str(external_path))
+            job_url = urljoin(workday_base_url.rstrip("/") + "/", str(external_path))
             if not _valid_https_url(job_url):
                 continue
             title = item.get("title") or item.get("jobTitle") or "Untitled job"
@@ -478,23 +551,135 @@ async def _fetch_workday_jobs(
                     posted_at = datetime.fromisoformat(posted.replace("Z", "+00:00"))
                 except ValueError:
                     posted_at = None
-            jobs.append(
-                JobListing(
-                    job_id=f"workday:{source.company_name.lower()}:{external_id}",
-                    title=title,
-                    company=source.company_name,
-                    location=location,
-                    description=_clean_html(item.get("description") or item.get("jobDescription") or title),
-                    url=_normalize_url(job_url),
-                    source=f"workday:{site}",
-                    posted_at=posted_at,
-                    employment_type=item.get("timeType"),
-                    salary_confidence="unknown",
-                )
+            job = JobListing(
+                job_id=f"workday:{source.company_name.lower()}:{external_id}",
+                title=title,
+                company=source.company_name,
+                location=location,
+                description=_clean_html(item.get("description") or item.get("jobDescription") or title),
+                url=_normalize_url(job_url),
+                source=f"workday:{site}",
+                posted_at=posted_at,
+                employment_type=item.get("timeType"),
+                salary_confidence="unknown",
             )
+            if not _is_india_job(job):
+                continue
+            jobs.append(job)
         if new_on_page == 0:
             break
         offset += page_size
+    return jobs
+
+
+def _is_direct_job_detail_url(job_url: str) -> bool:
+    parsed = urlparse(job_url)
+    path = parsed.path.lower()
+    query = parsed.query.lower()
+    direct_markers = [
+        "/jobs/results/",
+        "/details/",
+        "/job/",
+        "/jobs/",
+        "/careers/jobs/",
+        "/open-positions/",
+    ]
+    category_markers = [
+        "/careers/all-jobs",
+        "/search-jobs/",
+        "/category/",
+        "/engineering-jobs",
+        "/search-results",
+        "/career-page",
+    ]
+    if any(marker in path for marker in category_markers):
+        return False
+    return any(marker in path for marker in direct_markers) or "jobid=" in query or "job_id=" in query
+
+
+def _title_from_job_url(job_url: str, fallback: str) -> str:
+    parsed = urlparse(job_url)
+    pieces = [part for part in parsed.path.split("/") if part]
+    if pieces:
+        slug = pieces[-1]
+        slug = sub(r"^\d+[-_]*", "", slug)
+        slug = sub(r"^[a-f0-9-]{20,}[-_]*", "", slug)
+        title = sub(r"[-_]+", " ", slug).strip()
+        if title and not title.isdigit() and len(title) > 3:
+            return title.title()
+    return fallback
+
+
+def _parse_flexible_date(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    for candidate in [value, value.replace("Z", "+00:00")]:
+        try:
+            parsed = datetime.fromisoformat(candidate)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+        except ValueError:
+            continue
+    return None
+
+
+def _extract_embedded_search_jobs(source: CompanySource, html: str) -> list[JobListing]:
+    jobs: list[JobListing] = []
+    decoder = json.JSONDecoder()
+    cursor = 0
+    while True:
+        key_index = html.find('"eagerLoadRefineSearch"', cursor)
+        if key_index == -1:
+            break
+        cursor = key_index + 1
+        colon_index = html.find(":", key_index)
+        if colon_index == -1:
+            continue
+        try:
+            payload, parsed_length = decoder.raw_decode(html[colon_index + 1 :])
+        except json.JSONDecodeError:
+            continue
+        cursor = colon_index + 1 + parsed_length
+        if not isinstance(payload, dict):
+            continue
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        page_jobs = data.get("jobs") if isinstance(data.get("jobs"), list) else []
+        for item in page_jobs:
+            if not isinstance(item, dict):
+                continue
+            apply_url = item.get("applyUrl") or item.get("url")
+            if not _valid_https_url(apply_url):
+                continue
+            title = item.get("title") or item.get("jobTitle") or item.get("displayName")
+            if not title:
+                title = _title_from_job_url(str(apply_url), source.company_name)
+            location = (
+                item.get("cityStateCountry")
+                or item.get("location")
+                or ", ".join(item.get("multi_location") or [])
+                or item.get("address")
+                or item.get("country")
+            )
+            description = _clean_html(
+                item.get("descriptionTeaser")
+                or (item.get("ml_job_parser") or {}).get("descriptionTeaser")
+                or title
+            )
+            job_id = item.get("reqId") or item.get("jobId") or item.get("jobSeqNo") or apply_url
+            job = JobListing(
+                job_id=f"embedded:{source.company_name.lower()}:{job_id}",
+                title=title,
+                company=source.company_name,
+                location=location,
+                description=f"{description} {location or ''}",
+                url=_normalize_url(str(apply_url)),
+                source="embedded_search",
+                posted_at=_parse_flexible_date(item.get("postedDate") or item.get("dateCreated")),
+                employment_type=item.get("type"),
+                salary_confidence="unknown",
+            )
+            if not _is_india_job(job):
+                continue
+            jobs.append(job)
     return jobs
 
 
@@ -512,6 +697,9 @@ async def _fetch_generic_official_jobs(
     if "text/html" not in content_type and "application/xhtml" not in content_type:
         return []
     html = response.text[: int(os.getenv("HTTP_MAX_RESPONSE_CHARS", "2000000"))]
+    embedded_jobs = _extract_embedded_search_jobs(source, html)
+    if embedded_jobs:
+        return embedded_jobs
     link_matches = findall(r"<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", html, flags=2)
     jobs: list[JobListing] = []
     seen_urls: set[str] = set()
@@ -527,6 +715,8 @@ async def _fetch_generic_official_jobs(
         parsed_job = urlparse(job_url)
         if parsed_job.scheme != "https":
             continue
+        if not _is_direct_job_detail_url(job_url):
+            continue
         if parsed_job.netloc.lower().removeprefix("www.") != source.domain.removeprefix("www."):
             allowed = [domain.lower().removeprefix("www.") for domain in source.official_domains]
             if parsed_job.netloc.lower().removeprefix("www.") not in allowed:
@@ -536,18 +726,20 @@ async def _fetch_generic_official_jobs(
             continue
         seen_urls.add(normalized_url)
         stable_id = hashlib.sha256(normalized_url.encode("utf-8")).hexdigest()[:16]
-        jobs.append(
-            JobListing(
-                job_id=f"official:{source.company_name.lower()}:{stable_id}",
-                title=label or source.company_name,
-                company=source.company_name,
-                location="India" if "india" in combined else None,
-                description=label,
-                url=normalized_url,
-                source="official_html",
-                salary_confidence="unknown",
-            )
+        title = _title_from_job_url(job_url, label or source.company_name)
+        job = JobListing(
+            job_id=f"official:{source.company_name.lower()}:{stable_id}",
+            title=title,
+            company=source.company_name,
+            location="India" if _is_india_text(combined) else None,
+            description=f"{label} {job_url}",
+            url=normalized_url,
+            source="official_html",
+            salary_confidence="unknown",
         )
+        if not _is_india_job(job):
+            continue
+        jobs.append(job)
     return jobs
 
 
@@ -561,6 +753,10 @@ async def _fetch_company_source_jobs(
         return await _fetch_amazon_jobs(client, query=query, limit=limit)
     if source.source_type == "workday":
         return await _fetch_workday_jobs(client, source, query=query)
+    if source.source_type == "greenhouse":
+        return await _fetch_greenhouse_source(client, source)
+    if source.source_type == "lever":
+        return await _fetch_lever_source(client, source)
     return await _fetch_generic_official_jobs(client, source, query=query)
 
 

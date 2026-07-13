@@ -68,7 +68,7 @@ class FakeHtmlClient:
         return FakeResponse(
             text="""
                 <a href="https://evil.example/jobs/software-engineer">Software Engineer</a>
-                <a href="/jobs/backend-engineer">Backend Engineer job</a>
+                <a href="/jobs/backend-engineer-india">Backend Engineer job India</a>
             """,
             content_type="text/html; charset=utf-8",
         )
@@ -93,7 +93,7 @@ class JobScraperRulesTest(unittest.TestCase):
         )
 
         self.assertEqual(len(jobs), 1)
-        self.assertEqual(str(jobs[0].url), "https://careers.example.com/jobs/backend-engineer")
+        self.assertEqual(str(jobs[0].url), "https://careers.example.com/jobs/backend-engineer-india")
 
 
 if __name__ == "__main__":

@@ -111,15 +111,18 @@ sources:
     priority: 40
   - company_name: PhonePe
     careers_url: https://www.phonepe.com/careers/
-    source_type: generic_html
+    source_type: greenhouse
+    source_key: phonepe
     priority: 41
   - company_name: Razorpay
     careers_url: https://razorpay.com/careers/
-    source_type: generic_html
+    source_type: greenhouse
+    source_key: razorpaysoftwareprivatelimited
     priority: 42
   - company_name: Meesho
     careers_url: https://www.meesho.io/jobs
-    source_type: generic_html
+    source_type: lever
+    source_key: meesho
     priority: 43
   - company_name: Swiggy
     careers_url: https://careers.swiggy.com/
@@ -131,19 +134,23 @@ sources:
     priority: 45
   - company_name: CRED
     careers_url: https://careers.cred.club/
-    source_type: generic_html
+    source_type: lever
+    source_key: cred
     priority: 46
   - company_name: Groww
     careers_url: https://groww.in/careers
-    source_type: generic_html
+    source_type: greenhouse
+    source_key: groww
     priority: 47
   - company_name: BrowserStack
     careers_url: https://www.browserstack.com/careers
-    source_type: generic_html
+    source_type: workday
+    source_key: https://browserstack.wd3.myworkdayjobs.com/External
     priority: 48
   - company_name: Postman
     careers_url: https://www.postman.com/company/careers/
-    source_type: generic_html
+    source_type: greenhouse
+    source_key: postman
     priority: 49
   - company_name: Freshworks
     careers_url: https://www.freshworks.com/company/careers/
@@ -155,7 +162,8 @@ sources:
     priority: 51
   - company_name: Dream Sports
     careers_url: https://www.dreamsports.group/careers/
-    source_type: generic_html
+    source_type: lever
+    source_key: dreamsports
     priority: 52
   - company_name: Juspay
     careers_url: https://juspay.io/careers
