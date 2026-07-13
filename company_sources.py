@@ -58,12 +58,26 @@ DEFAULT_COMPANY_SOURCES: list[CompanySource] = [
     CompanySource("Cisco", "https://jobs.cisco.com/", priority=22, official_domains=["jobs.cisco.com"]),
     CompanySource("Oracle", "https://www.oracle.com/in/careers/", priority=23, official_domains=["oracle.com"]),
     CompanySource("PayPal", "https://paypal.eightfold.ai/careers", priority=24, official_domains=["paypal.eightfold.ai"]),
-    CompanySource("Visa", "https://corporate.visa.com/en/careers/search-jobs.html", priority=25, official_domains=["corporate.visa.com"]),
+    CompanySource(
+        "Visa",
+        "https://corporate.visa.com/en/careers.html",
+        priority=25,
+        source_type="workday",
+        source_key="https://visa.wd5.myworkdayjobs.com/Visa",
+        official_domains=["corporate.visa.com", "visa.wd5.myworkdayjobs.com"],
+    ),
     CompanySource("JPMorgan Chase", "https://www.jpmorganchase.com/careers", priority=26, official_domains=["jpmorganchase.com"]),
     CompanySource("Goldman Sachs", "https://higher.gs.com/", priority=27, official_domains=["higher.gs.com"]),
     CompanySource("Morgan Stanley", "https://www.morganstanley.com/people-opportunities/students-graduates", priority=28, official_domains=["morganstanley.com"]),
     CompanySource("American Express", "https://aexp.eightfold.ai/careers", priority=29, official_domains=["aexp.eightfold.ai"]),
-    CompanySource("Wells Fargo", "https://www.wellsfargojobs.com/en/jobs/", priority=30, official_domains=["wellsfargojobs.com"]),
+    CompanySource(
+        "Wells Fargo",
+        "https://www.wellsfargojobs.com/en/jobs/",
+        priority=30,
+        source_type="workday",
+        source_key="https://wf.wd1.myworkdayjobs.com/WellsFargoJobs",
+        official_domains=["wellsfargojobs.com", "wf.wd1.myworkdayjobs.com"],
+    ),
     CompanySource("Mastercard", "https://careers.mastercard.com/us/en/search-results", priority=31, official_domains=["careers.mastercard.com"]),
     CompanySource("SAP Labs", "https://jobs.sap.com/", priority=32, official_domains=["jobs.sap.com"]),
     CompanySource("Dell Technologies", "https://jobs.dell.com/", priority=33, official_domains=["jobs.dell.com"]),
@@ -83,7 +97,7 @@ DEFAULT_COMPANY_SOURCES: list[CompanySource] = [
     CompanySource("Zoho", "https://www.zoho.com/careers/", priority=51, official_domains=["zoho.com"]),
     CompanySource("Dream Sports", "https://www.dreamsports.group/careers/", priority=52, source_type="lever", source_key="dreamsports", official_domains=["dreamsports.group"]),
     CompanySource("Juspay", "https://juspay.io/careers", priority=53, official_domains=["juspay.io"]),
-    CompanySource("Zepto", "https://www.zeptonow.com/careers", priority=54, official_domains=["zeptonow.com"]),
+    CompanySource("Zepto", "https://www.zepto.com/s/careers", priority=54, official_domains=["zepto.com"]),
 ]
 
 

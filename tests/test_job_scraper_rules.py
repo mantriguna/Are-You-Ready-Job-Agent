@@ -2,7 +2,7 @@ import asyncio
 import unittest
 
 from company_sources import CompanySource
-from job_scraper import _fetch_amazon_jobs, _fetch_generic_official_jobs
+from job_scraper import JobListing, _fetch_amazon_jobs, _fetch_generic_official_jobs, _is_india_job
 
 
 class FakeResponse:
@@ -94,6 +94,19 @@ class JobScraperRulesTest(unittest.TestCase):
 
         self.assertEqual(len(jobs), 1)
         self.assertEqual(str(jobs[0].url), "https://careers.example.com/jobs/backend-engineer-india")
+
+    def test_india_filter_rejects_non_india_explicit_location(self) -> None:
+        job = JobListing(
+            job_id="greenhouse:postman:123",
+            title="Account Development Representative",
+            company="Postman",
+            location="London, UK; Remote, UK",
+            description="Global role with offices in India and the US.",
+            url="https://job-boards.greenhouse.io/postman/jobs/123",
+            source="greenhouse",
+        )
+
+        self.assertFalse(_is_india_job(job))
 
 
 if __name__ == "__main__":

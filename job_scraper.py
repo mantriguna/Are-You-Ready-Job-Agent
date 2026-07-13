@@ -160,7 +160,9 @@ def _is_india_text(value: str | None) -> bool:
 
 
 def _is_india_job(job: JobListing) -> bool:
-    return _is_india_text(" ".join([job.location or "", job.description, str(job.url)]))
+    if job.location:
+        return _is_india_text(job.location)
+    return _is_india_text(" ".join([job.description, str(job.url)]))
 
 
 def _parse_amazon_posted_date(value: str | None) -> datetime | None:

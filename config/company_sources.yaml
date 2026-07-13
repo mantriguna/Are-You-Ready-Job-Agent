@@ -62,8 +62,9 @@ sources:
     source_type: generic_html
     priority: 24
   - company_name: Visa
-    careers_url: https://corporate.visa.com/en/careers/search-jobs.html
-    source_type: generic_html
+    careers_url: https://corporate.visa.com/en/careers.html
+    source_type: workday
+    source_key: https://visa.wd5.myworkdayjobs.com/Visa
     priority: 25
   - company_name: JPMorgan Chase
     careers_url: https://www.jpmorganchase.com/careers
@@ -83,7 +84,8 @@ sources:
     priority: 29
   - company_name: Wells Fargo
     careers_url: https://www.wellsfargojobs.com/en/jobs/
-    source_type: generic_html
+    source_type: workday
+    source_key: https://wf.wd1.myworkdayjobs.com/WellsFargoJobs
     priority: 30
   - company_name: Mastercard
     careers_url: https://careers.mastercard.com/us/en/search-results
@@ -170,6 +172,6 @@ sources:
     source_type: generic_html
     priority: 53
   - company_name: Zepto
-    careers_url: https://www.zeptonow.com/careers
+    careers_url: https://www.zepto.com/s/careers
     source_type: generic_html
     priority: 54
