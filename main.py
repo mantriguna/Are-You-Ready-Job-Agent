@@ -1,6 +1,8 @@
 import logging
 import os
+from collections import OrderedDict
 from pathlib import Path
+from time import monotonic
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
@@ -14,6 +16,7 @@ from database import (
     get_admin_status,
     get_supabase_client,
     get_user_profile,
+    record_incoming_message,
     save_user_profile,
 )
 from job_scraper import JobSearchResult, fetch_jobs
@@ -42,6 +45,9 @@ logger = logging.getLogger("ai-job-agent")
 
 VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "MySuperSecretToken123")
 WHATSAPP_TEXT_CHUNK_SIZE = 3500
+MESSAGE_DEDUPE_TTL_SECONDS = int(os.getenv("MESSAGE_DEDUPE_TTL_SECONDS", "3600"))
+MESSAGE_DEDUPE_MAX_IDS = int(os.getenv("MESSAGE_DEDUPE_MAX_IDS", "5000"))
+_recent_message_ids: OrderedDict[str, float] = OrderedDict()
 
 
 class JobMatchRequest(BaseModel):
@@ -55,6 +61,40 @@ async def _safe_send_text_message(whatsapp_number: str, text: str) -> None:
         await send_text_message(whatsapp_number, text)
     except Exception as exc:
         logger.warning("Could not send WhatsApp text message to %s: %s", whatsapp_number, exc)
+
+
+def _claim_recent_message_id(message_id: str) -> bool:
+    now = monotonic()
+    expired_before = now - MESSAGE_DEDUPE_TTL_SECONDS
+    while _recent_message_ids:
+        _, timestamp = next(iter(_recent_message_ids.items()))
+        if timestamp >= expired_before:
+            break
+        _recent_message_ids.popitem(last=False)
+
+    if message_id in _recent_message_ids:
+        _recent_message_ids.move_to_end(message_id)
+        return False
+
+    _recent_message_ids[message_id] = now
+    while len(_recent_message_ids) > MESSAGE_DEDUPE_MAX_IDS:
+        _recent_message_ids.popitem(last=False)
+    return True
+
+
+def _should_process_incoming_message(message_id: str, whatsapp_number: str) -> bool:
+    if not _claim_recent_message_id(message_id):
+        return False
+
+    try:
+        return record_incoming_message(message_id, whatsapp_number)
+    except Exception as exc:
+        logger.warning(
+            "Persistent WhatsApp message dedupe unavailable for %s: %s",
+            message_id,
+            exc,
+        )
+        return True
 
 
 def _mask_secret(value: str | None) -> str | None:
@@ -166,6 +206,13 @@ async def receive_whatsapp_message(request: Request, background_tasks: Backgroun
     logger.info("Received WhatsApp webhook payload: %s", payload)
 
     for message in extract_text_messages(payload):
+        if not _should_process_incoming_message(
+            message.message_id,
+            message.whatsapp_number,
+        ):
+            logger.info("Skipping duplicate WhatsApp message id %s", message.message_id)
+            continue
+
         try:
             await mark_message_read_with_typing(message.message_id)
         except Exception as exc:

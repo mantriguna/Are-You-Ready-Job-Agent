@@ -42,6 +42,31 @@ def save_user_profile(whatsapp_number: str, values: dict) -> dict:
     return result.data[0]
 
 
+def record_incoming_message(message_id: str, whatsapp_number: str) -> bool:
+    """Return True only the first time a WhatsApp message id is seen.
+
+    This uses an optional database table. If the table does not exist yet, callers
+    should fall back to their local in-memory duplicate guard.
+    """
+    supabase = get_supabase_client()
+    existing = (
+        supabase.table("incoming_whatsapp_messages")
+        .select("message_id")
+        .eq("message_id", message_id)
+        .limit(1)
+        .execute()
+    )
+    if existing.data:
+        return False
+
+    (
+        supabase.table("incoming_whatsapp_messages")
+        .insert({"message_id": message_id, "whatsapp_number": whatsapp_number})
+        .execute()
+    )
+    return True
+
+
 def get_ready_user_profiles() -> list[dict]:
     result = (
         get_supabase_client()
