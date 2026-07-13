@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -167,7 +168,21 @@ async def receive_whatsapp_message(request: Request, background_tasks: Backgroun
                 exc,
             )
 
-        profile = get_user_profile(message.whatsapp_number)
+        try:
+            profile = get_user_profile(message.whatsapp_number)
+        except Exception as exc:
+            logger.exception(
+                "Database unavailable while handling WhatsApp message from %s",
+                message.whatsapp_number,
+            )
+            await send_text_message(
+                message.whatsapp_number,
+                (
+                    "I am online, but my database connection is unavailable right now. "
+                    "Please check the Supabase project URL/key in Render, then message me again."
+                ),
+            )
+            continue
         if profile and is_latest_jobs_request(message.text):
             await send_text_message(
                 message.whatsapp_number,
@@ -207,9 +222,19 @@ async def health_check():
 
 @app.get("/health/db")
 async def database_health_check():
-    supabase = get_supabase_client()
-    result = supabase.table("user_profiles").select("whatsapp_number").limit(1).execute()
-    return {"status": "database connected", "sample_count": len(result.data)}
+    try:
+        supabase = get_supabase_client()
+        result = supabase.table("user_profiles").select("whatsapp_number").limit(1).execute()
+        return {"status": "database connected", "sample_count": len(result.data)}
+    except Exception as exc:
+        logger.exception("Database health check failed.")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "database unavailable",
+                "error": str(exc)[:300],
+            },
+        )
 
 
 @app.get("/health/meta")
@@ -405,9 +430,20 @@ async def cron_daily_whatsapp(
         raise HTTPException(status_code=403, detail="Invalid cron token.")
 
     override_hour = 20 if force else None
-    timezone_name, current_hour, profiles = get_profiles_for_current_hour(
-        override_hour=override_hour
-    )
+    try:
+        timezone_name, current_hour, profiles = get_profiles_for_current_hour(
+            override_hour=override_hour
+        )
+    except Exception as exc:
+        logger.exception("Could not start daily WhatsApp cron because database is unavailable.")
+        return ScheduledRunResult(
+            timezone=os.getenv("APP_TIMEZONE", "Asia/Kolkata"),
+            current_hour=20 if force else -1,
+            matched_profile_count=0,
+            dry_run=False,
+            runs=[],
+            errors=[{"whatsapp_number": "*", "error": f"Database unavailable: {exc}"}],
+        )
     background_tasks.add_task(
         run_scheduled_job_search,
         dry_run=False,
