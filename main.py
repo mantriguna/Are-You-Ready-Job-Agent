@@ -312,7 +312,14 @@ async def database_health_check():
         )
 
 
-@app.get("/cron/keepalive-supabase")
+@app.api_route(
+    "/cron/keepalive-supabase",
+    methods=["GET", "POST"],
+)
+@app.api_route(
+    "/cron/keepalive",
+    methods=["GET", "POST"],
+)
 async def keepalive_supabase(token: str | None = None):
     cron_secret = os.getenv("CRON_SECRET")
     if cron_secret and token != cron_secret:
