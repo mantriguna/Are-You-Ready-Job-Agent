@@ -1,0 +1,167 @@
+# Maintainer-facing source registry mirror.
+# Runtime registry lives in company_sources.py to avoid adding a YAML dependency.
+sources:
+  - company_name: Amazon
+    careers_url: https://www.amazon.jobs/en/search?base_query=software&loc_query=India
+    source_type: amazon_json
+    priority: 1
+  - company_name: Microsoft
+    careers_url: https://jobs.careers.microsoft.com/global/en/search?lc=India
+    source_type: generic_html
+    priority: 2
+  - company_name: Google
+    careers_url: https://www.google.com/about/careers/applications/jobs/results/?location=India
+    source_type: generic_html
+    priority: 3
+  - company_name: Atlassian
+    careers_url: https://www.atlassian.com/company/careers/all-jobs
+    source_type: generic_html
+    priority: 4
+  - company_name: Uber
+    careers_url: https://www.uber.com/in/en/careers/list/
+    source_type: generic_html
+    priority: 5
+  - company_name: Salesforce
+    careers_url: https://careers.salesforce.com/en/jobs/
+    source_type: generic_html
+    priority: 6
+  - company_name: ServiceNow
+    careers_url: https://careers.servicenow.com/jobs/
+    source_type: generic_html
+    priority: 7
+  - company_name: Walmart Global Tech
+    careers_url: https://tech.walmart.com/content/walmart-global-tech/en_us/careers.html
+    source_type: generic_html
+    priority: 8
+  - company_name: Adobe
+    careers_url: https://careers.adobe.com/us/en/search-results?keywords=software&location=India
+    source_type: generic_html
+    priority: 9
+  - company_name: Intuit
+    careers_url: https://jobs.intuit.com/search-jobs/India/
+    source_type: generic_html
+    priority: 10
+  - company_name: NVIDIA
+    careers_url: https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
+    source_type: workday
+    priority: 20
+  - company_name: Qualcomm
+    careers_url: https://careers.qualcomm.com/careers
+    source_type: generic_html
+    priority: 21
+  - company_name: Cisco
+    careers_url: https://jobs.cisco.com/
+    source_type: generic_html
+    priority: 22
+  - company_name: Oracle
+    careers_url: https://www.oracle.com/in/careers/
+    source_type: generic_html
+    priority: 23
+  - company_name: PayPal
+    careers_url: https://paypal.eightfold.ai/careers
+    source_type: generic_html
+    priority: 24
+  - company_name: Visa
+    careers_url: https://corporate.visa.com/en/careers/search-jobs.html
+    source_type: generic_html
+    priority: 25
+  - company_name: JPMorgan Chase
+    careers_url: https://www.jpmorganchase.com/careers
+    source_type: generic_html
+    priority: 26
+  - company_name: Goldman Sachs
+    careers_url: https://higher.gs.com/
+    source_type: generic_html
+    priority: 27
+  - company_name: Morgan Stanley
+    careers_url: https://www.morganstanley.com/people-opportunities/students-graduates
+    source_type: generic_html
+    priority: 28
+  - company_name: American Express
+    careers_url: https://aexp.eightfold.ai/careers
+    source_type: generic_html
+    priority: 29
+  - company_name: Wells Fargo
+    careers_url: https://www.wellsfargojobs.com/en/jobs/
+    source_type: generic_html
+    priority: 30
+  - company_name: Mastercard
+    careers_url: https://careers.mastercard.com/us/en/search-results
+    source_type: generic_html
+    priority: 31
+  - company_name: SAP Labs
+    careers_url: https://jobs.sap.com/
+    source_type: generic_html
+    priority: 32
+  - company_name: Dell Technologies
+    careers_url: https://jobs.dell.com/
+    source_type: generic_html
+    priority: 33
+  - company_name: Broadcom
+    careers_url: https://broadcom.wd1.myworkdayjobs.com/External_Career
+    source_type: workday
+    priority: 34
+  - company_name: Apple India
+    careers_url: https://jobs.apple.com/en-in/search?location=india-INDC
+    source_type: generic_html
+    priority: 35
+  - company_name: Flipkart
+    careers_url: https://www.flipkartcareers.com/
+    source_type: generic_html
+    priority: 40
+  - company_name: PhonePe
+    careers_url: https://www.phonepe.com/careers/
+    source_type: generic_html
+    priority: 41
+  - company_name: Razorpay
+    careers_url: https://razorpay.com/careers/
+    source_type: generic_html
+    priority: 42
+  - company_name: Meesho
+    careers_url: https://www.meesho.io/jobs
+    source_type: generic_html
+    priority: 43
+  - company_name: Swiggy
+    careers_url: https://careers.swiggy.com/
+    source_type: generic_html
+    priority: 44
+  - company_name: Zomato
+    careers_url: https://www.zomato.com/careers
+    source_type: generic_html
+    priority: 45
+  - company_name: CRED
+    careers_url: https://careers.cred.club/
+    source_type: generic_html
+    priority: 46
+  - company_name: Groww
+    careers_url: https://groww.in/careers
+    source_type: generic_html
+    priority: 47
+  - company_name: BrowserStack
+    careers_url: https://www.browserstack.com/careers
+    source_type: generic_html
+    priority: 48
+  - company_name: Postman
+    careers_url: https://www.postman.com/company/careers/
+    source_type: generic_html
+    priority: 49
+  - company_name: Freshworks
+    careers_url: https://www.freshworks.com/company/careers/
+    source_type: generic_html
+    priority: 50
+  - company_name: Zoho
+    careers_url: https://www.zoho.com/careers/
+    source_type: generic_html
+    priority: 51
+  - company_name: Dream Sports
+    careers_url: https://www.dreamsports.group/careers/
+    source_type: generic_html
+    priority: 52
+  - company_name: Juspay
+    careers_url: https://juspay.io/careers
+    source_type: generic_html
+    priority: 53
+  - company_name: Zepto
+    careers_url: https://www.zeptonow.com/careers
+    source_type: generic_html
+    priority: 54

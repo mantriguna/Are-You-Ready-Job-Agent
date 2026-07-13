@@ -88,6 +88,15 @@ def _heuristic_job_match(
         "linux",
         "data structures",
         "algorithms",
+        "hibernate",
+        "jpa",
+        "mysql",
+        "react",
+        "prometheus",
+        "junit",
+        "mockito",
+        "system design",
+        "retrieval-augmented generation",
     ]
     matched = [
         term
@@ -103,9 +112,84 @@ def _heuristic_job_match(
             "python developer",
             "java developer",
             "sde",
+            "platform engineer",
+            "cloud engineer",
+            "site reliability",
+            "application developer",
+            "member of technical staff",
         ]
     )
-    score = min(95, 45 + len(matched) * 5 + (15 if role_match else 0))
+    title_text = job_title.lower()
+    required_years = [int(value) for value in re.findall(r"(\d+)\+?\s*years?", job_text)]
+    min_years = min(required_years) if required_years else None
+    preferred_location = any(
+        location in job_text
+        for location in [
+            "hyderabad",
+            "bengaluru",
+            "bangalore",
+            "chennai",
+            "pune",
+            "gurugram",
+            "gurgaon",
+            "noida",
+            "mumbai",
+            "remote",
+            "india",
+        ]
+    )
+    senior_negative = any(
+        marker in title_text or marker in job_text
+        for marker in [
+            "senior manager",
+            "staff engineer",
+            "principal",
+            "architect",
+            "director",
+            "people manager",
+            "5+ years",
+            "6+ years",
+            "7+ years",
+            "8+ years",
+            "10+ years",
+        ]
+    )
+    non_software_negative = any(
+        marker in title_text
+        for marker in [
+            "sales",
+            "recruiter",
+            "marketing",
+            "finance",
+            "customer support",
+            "business analyst",
+            "operations",
+        ]
+    )
+
+    technical_score = min(35, len(matched) * 4)
+    title_score = 20 if role_match else 0
+    if any(term in title_text for term in ["backend", "sde", "software development engineer"]):
+        title_score = min(20, title_score + 5)
+    experience_score = 15
+    if min_years is not None:
+        if min_years <= 2:
+            experience_score = 15
+        elif min_years <= 4:
+            experience_score = 10
+        else:
+            experience_score = 0
+    location_score = 10 if preferred_location else 0
+    education_score = 5 if any(term in job_text for term in ["computer science", "bachelor", "b.tech", "engineering"]) else 3
+    domain_score = 5 if any(term in job_text for term in ["ai", "llm", "rag", "ecommerce", "distributed", "platform"]) else 2
+    devops_score = 5 if any(term in job_text for term in ["aws", "docker", "kubernetes", "jenkins", "ci/cd", "linux"]) else 0
+    recency_score = 5
+    score = technical_score + title_score + experience_score + location_score + education_score + domain_score + devops_score + recency_score
+    if senior_negative:
+        score -= 30
+    if non_software_negative:
+        score -= 40
+    score = max(0, min(100, score))
     missing = [
         term
         for term in skill_terms
@@ -116,10 +200,10 @@ def _heuristic_job_match(
         matched_skills=matched[:12] or ["Role appears relevant to your target titles"],
         missing_skills=missing,
         short_reason=(
-            "Gemini quota was unavailable, so this is a conservative local match "
-            "based on overlapping role and skill terms."
+            "Deterministic score based on skill overlap, role relevance, experience, "
+            "location, education, domain, DevOps signals, and seniority risk."
         ),
-        should_alert=score >= 70,
+        should_alert=score >= int(os.getenv("MIN_MATCH_SCORE", "75")),
     )
 
 
@@ -139,6 +223,15 @@ def evaluate_job_match(
     job_description: str,
     resume_text: str | None = None,
 ) -> JobMatchEvaluation:
+    deterministic_evaluation = _heuristic_job_match(
+        target_title=target_title,
+        candidate_context=resume_text or experience_summary,
+        job_title=job_title,
+        job_description=job_description,
+    )
+    if os.getenv("USE_LLM_MATCHING", "false").lower() != "true":
+        return deterministic_evaluation
+
     model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite")
     candidate_context = resume_text or experience_summary
@@ -186,11 +279,12 @@ Job description:
     except Exception:
         if os.getenv("ENABLE_HEURISTIC_AI_FALLBACK", "true").lower() != "true":
             raise
-        return _heuristic_job_match(
-            target_title=target_title,
-            candidate_context=candidate_context,
-            job_title=job_title,
-            job_description=job_description,
-        )
+        return deterministic_evaluation
 
-    return _parse_evaluation_response(response)
+    llm_evaluation = _parse_evaluation_response(response)
+    return llm_evaluation.model_copy(
+        update={
+            "match_percentage": deterministic_evaluation.match_percentage,
+            "should_alert": deterministic_evaluation.should_alert,
+        }
+    )

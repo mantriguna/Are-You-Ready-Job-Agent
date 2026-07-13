@@ -463,25 +463,28 @@ async def search_jobs(
 async def run_jobs_for_user(
     whatsapp_number: str,
     limit: int = Query(15, ge=1, le=50),
-    threshold: int = Query(75, ge=0, le=100),
+    threshold: int | None = Query(None, ge=0, le=100),
+    min_match_score: int | None = Query(None, ge=0, le=100),
+    max_matched_jobs_per_user: int | None = Query(None, ge=0, le=500),
     dry_run: bool = True,
     preferred_filters: bool = True,
     recent_days: int | None = Query(1, ge=0, le=30),
     ignore_duplicates: bool = False,
     use_template_alert: bool = False,
-    max_evaluations: int | None = Query(None, ge=1, le=50),
+    max_evaluations: int | None = Query(None, ge=0, le=500),
 ):
     try:
         return await run_user_job_search(
             whatsapp_number=whatsapp_number,
             limit=limit,
-            threshold=threshold,
+            threshold=min_match_score if min_match_score is not None else threshold,
             dry_run=dry_run,
             preferred_filters=preferred_filters,
             recent_days=recent_days,
             ignore_duplicates=ignore_duplicates,
             use_template_alert=use_template_alert,
             max_evaluations=max_evaluations,
+            max_matched_jobs_per_user=max_matched_jobs_per_user,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -496,7 +499,9 @@ async def execute_daily_search(
     token: str | None = None,
     dry_run: bool = False,
     limit: int = Query(15, ge=1, le=50),
-    threshold: int = Query(75, ge=0, le=100),
+    threshold: int | None = Query(None, ge=0, le=100),
+    min_match_score: int | None = Query(None, ge=0, le=100),
+    max_matched_jobs_per_user: int | None = Query(None, ge=0, le=500),
     override_hour: int | None = Query(None, ge=0, le=23),
     preferred_filters: bool = True,
     recent_days: int | None = Query(1, ge=0, le=30),
@@ -504,7 +509,7 @@ async def execute_daily_search(
     use_template_alert: bool | None = None,
     send_no_results: bool | None = None,
     background: bool = False,
-    max_evaluations: int | None = Query(None, ge=1, le=50),
+    max_evaluations: int | None = Query(None, ge=0, le=500),
 ):
     cron_secret = os.getenv("CRON_SECRET")
     if cron_secret and token != cron_secret:
@@ -530,6 +535,7 @@ async def execute_daily_search(
             dry_run=dry_run,
             limit=limit,
             threshold=threshold,
+            min_match_score=min_match_score,
             override_hour=override_hour,
             preferred_filters=preferred_filters,
             recent_days=recent_days,
@@ -537,6 +543,7 @@ async def execute_daily_search(
             use_template_alert=use_template_alert,
             send_no_results=send_no_results,
             max_evaluations=max_evaluations,
+            max_matched_jobs_per_user=max_matched_jobs_per_user,
         )
         return ScheduledRunResult(
             timezone=timezone_name,
@@ -551,6 +558,7 @@ async def execute_daily_search(
         dry_run=dry_run,
         limit=limit,
         threshold=threshold,
+        min_match_score=min_match_score,
         override_hour=override_hour,
         preferred_filters=preferred_filters,
         recent_days=recent_days,
@@ -558,6 +566,7 @@ async def execute_daily_search(
         use_template_alert=use_template_alert,
         send_no_results=send_no_results,
         max_evaluations=max_evaluations,
+        max_matched_jobs_per_user=max_matched_jobs_per_user,
     )
 
 
@@ -566,8 +575,10 @@ async def cron_daily_whatsapp(
     background_tasks: BackgroundTasks,
     token: str | None = None,
     limit: int = Query(15, ge=1, le=50),
-    max_evaluations: int = Query(25, ge=1, le=50),
-    threshold: int = Query(75, ge=0, le=100),
+    max_evaluations: int = Query(0, ge=0, le=500),
+    threshold: int | None = Query(None, ge=0, le=100),
+    min_match_score: int | None = Query(None, ge=0, le=100),
+    max_matched_jobs_per_user: int | None = Query(None, ge=0, le=500),
     recent_days: int = Query(1, ge=1, le=30),
     force: bool = False,
 ):
@@ -595,6 +606,7 @@ async def cron_daily_whatsapp(
         dry_run=False,
         limit=limit,
         threshold=threshold,
+        min_match_score=min_match_score,
         override_hour=override_hour,
         preferred_filters=True,
         recent_days=recent_days,
@@ -602,6 +614,7 @@ async def cron_daily_whatsapp(
         use_template_alert=True,
         send_no_results=True,
         max_evaluations=max_evaluations,
+        max_matched_jobs_per_user=max_matched_jobs_per_user,
     )
     return ScheduledRunResult(
         timezone=timezone_name,

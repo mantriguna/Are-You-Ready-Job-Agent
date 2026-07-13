@@ -82,7 +82,8 @@ async def run_scheduled_job_search(
     *,
     dry_run: bool = False,
     limit: int = 5,
-    threshold: int = 75,
+    threshold: int | None = None,
+    min_match_score: int | None = None,
     override_hour: int | None = None,
     preferred_filters: bool = True,
     recent_days: int | None = 1,
@@ -90,6 +91,7 @@ async def run_scheduled_job_search(
     use_template_alert: bool | None = None,
     send_no_results: bool | None = None,
     max_evaluations: int | None = None,
+    max_matched_jobs_per_user: int | None = None,
 ) -> ScheduledRunResult:
     try:
         timezone_name, current_hour, profiles = get_profiles_for_current_hour(
@@ -134,7 +136,12 @@ async def run_scheduled_job_search(
         )
 
     if max_evaluations is None:
-        max_evaluations = int(os.getenv("MAX_EVALUATIONS_PER_RUN", "3"))
+        max_evaluations = int(os.getenv("MAX_EVALUATIONS_PER_RUN", "0"))
+    effective_threshold = (
+        min_match_score
+        if min_match_score is not None
+        else threshold
+    )
 
     async def run_one(profile: dict) -> None:
         async with semaphore:
@@ -143,13 +150,14 @@ async def run_scheduled_job_search(
                 run_result = await run_user_job_search(
                     whatsapp_number=whatsapp_number,
                     limit=limit,
-                    threshold=threshold,
+                    threshold=effective_threshold,
                     dry_run=dry_run,
                     preferred_filters=preferred_filters,
                     recent_days=recent_days,
                     ignore_duplicates=ignore_duplicates,
                     use_template_alert=should_use_template_alert,
                     max_evaluations=max_evaluations,
+                    max_matched_jobs_per_user=max_matched_jobs_per_user,
                 )
                 runs.append(run_result)
 

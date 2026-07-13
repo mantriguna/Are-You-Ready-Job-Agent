@@ -14,11 +14,15 @@ on:
       max_evaluations:
         description: "Maximum jobs to evaluate"
         required: false
-        default: "25"
+        default: "0"
       threshold:
         description: "Minimum resume match score"
         required: false
         default: "75"
+      max_matched_jobs_per_user:
+        description: "Maximum matched jobs to send, 0 means unlimited"
+        required: false
+        default: "0"
       recent_days:
         description: "Search jobs posted within this many days"
         required: false
@@ -86,9 +90,11 @@ jobs:
           RAPIDAPI_JOBS_HOST: jsearch.p.rapidapi.com
           ENABLE_AMAZON_JOBS: "true"
           PREFERRED_JOB_QUERIES: SDE-1,Software Development Engineer,Backend Engineer,Python Developer,Java Developer
-          JOB_EVALUATION_POOL_LIMIT: ${{ github.event.inputs.max_evaluations || '25' }}
-          MAX_EVALUATIONS_PER_RUN: ${{ github.event.inputs.max_evaluations || '25' }}
-          FILL_DAILY_LIMIT_WITH_LOWER_MATCHES: "true"
+          MIN_MATCH_SCORE: ${{ github.event.inputs.threshold || '75' }}
+          MAX_MATCHED_JOBS_PER_USER: ${{ github.event.inputs.max_matched_jobs_per_user || '0' }}
+          JOB_EVALUATION_POOL_LIMIT: ${{ github.event.inputs.max_evaluations || '0' }}
+          MAX_EVALUATIONS_PER_RUN: ${{ github.event.inputs.max_evaluations || '0' }}
+          ALLOW_BELOW_THRESHOLD_FILL: "false"
           SEND_ALL_ABOVE_THRESHOLD_MATCHES: "true"
           CHAT_LATEST_JOB_LIMIT: "15"
           CHAT_LATEST_JOB_MAX_EVALUATIONS: "25"
@@ -98,14 +104,17 @@ jobs:
           SEND_NO_RESULT_SUMMARY: "true"
           DRY_RUN_INPUT: ${{ github.event.inputs.dry_run || 'false' }}
           LIMIT_INPUT: ${{ github.event.inputs.limit || '15' }}
-          MAX_EVALUATIONS_INPUT: ${{ github.event.inputs.max_evaluations || '25' }}
+          MAX_EVALUATIONS_INPUT: ${{ github.event.inputs.max_evaluations || '0' }}
           THRESHOLD_INPUT: ${{ github.event.inputs.threshold || '75' }}
+          MAX_MATCHED_INPUT: ${{ github.event.inputs.max_matched_jobs_per_user || '0' }}
           RECENT_DAYS_INPUT: ${{ github.event.inputs.recent_days || '1' }}
         run: |
           args=(
             --limit "$LIMIT_INPUT"
             --max-evaluations "$MAX_EVALUATIONS_INPUT"
             --threshold "$THRESHOLD_INPUT"
+            --min-match-score "$THRESHOLD_INPUT"
+            --max-matched-jobs-per-user "$MAX_MATCHED_INPUT"
             --recent-days "$RECENT_DAYS_INPUT"
           )
 

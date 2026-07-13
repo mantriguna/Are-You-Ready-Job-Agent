@@ -16,3 +16,21 @@ services:
         value: gemini-2.5-flash-lite
       - key: SCHEDULER_MAX_CONCURRENCY
         value: "3"
+      - key: MIN_MATCH_SCORE
+        value: "75"
+      - key: MAX_MATCHED_JOBS_PER_USER
+        value: "0"
+      - key: MAX_PAGES_PER_SOURCE
+        value: "0"
+      - key: JOB_SOURCE_CONCURRENCY
+        value: "5"
+      - key: HTTP_TIMEOUT_SECONDS
+        value: "30"
+      - key: JOB_EVALUATION_POOL_LIMIT
+        value: "0"
+      - key: MAX_EVALUATIONS_PER_RUN
+        value: "0"
+      - key: ENABLE_OFFICIAL_COMPANY_SOURCES
+        value: "true"
+      - key: ALLOW_BELOW_THRESHOLD_FILL
+        value: "false"

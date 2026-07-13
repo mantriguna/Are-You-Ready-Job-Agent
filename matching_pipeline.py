@@ -13,6 +13,7 @@ from database import (
     replace_latest_job_alerts,
     save_sent_job,
 )
+from company_sources import DEFAULT_COMPANY_SOURCES, DEFAULT_PREFERRED_LOCATIONS
 from job_scraper import JobListing, JobSearchResult, fetch_jobs
 from resume_tailor import generate_tailored_resume_txt
 from whatsapp import send_document_message, send_template_message, send_text_message
@@ -101,6 +102,13 @@ def _build_search_queries(target_title: str) -> list[str]:
     return search_queries
 
 
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
 def _compact_text(value: str, max_length: int) -> str:
     clean = " ".join(value.split())
     if len(clean) <= max_length:
@@ -136,37 +144,43 @@ def _format_daily_summary_chunks(alerts: list[dict]) -> list[str]:
     return chunks
 
 
-def _priority_score(job: JobListing, evaluation: JobMatchEvaluation) -> int:
-    text = f"{job.title} {job.description} {job.salary_text or ''}".lower()
-    score = evaluation.match_percentage
-    if job.company.lower() == "amazon":
-        score += 25
-    if job.posted_at:
-        age_days = (datetime.now(UTC) - job.posted_at).days
-        if age_days <= 1:
-            score += 15
-        elif age_days <= 7:
-            score += 8
-    if any(marker in text for marker in ["sde-1", "sde i", "associate", "junior", "0-2"]):
-        score += 10
-    if any(marker in text for marker in ["full time", "full-time", "contract", "contractual"]):
-        score += 5
-    if any(marker in text for marker in ["lpa", "lakh", "inr", "rs."]):
-        score += 5
-    return score
+COMPANY_PRIORITY = {
+    source.company_name.lower(): source.priority for source in DEFAULT_COMPANY_SOURCES
+}
+
+
+def _location_rank(location: str | None) -> int:
+    if not location:
+        return len(DEFAULT_PREFERRED_LOCATIONS) + 1
+    normalized = location.lower()
+    for index, preferred in enumerate(DEFAULT_PREFERRED_LOCATIONS):
+        if preferred.lower() in normalized:
+            return index
+    if "india" in normalized or ", ind" in normalized:
+        return len(DEFAULT_PREFERRED_LOCATIONS)
+    return len(DEFAULT_PREFERRED_LOCATIONS) + 1
+
+
+def _posted_sort_value(posted_at: datetime | None) -> float:
+    if not posted_at:
+        return 0.0
+    if posted_at.tzinfo is None:
+        posted_at = posted_at.replace(tzinfo=UTC)
+    return posted_at.timestamp()
 
 
 async def run_user_job_search(
     *,
     whatsapp_number: str,
     limit: int = 10,
-    threshold: int = 40,
+    threshold: int | None = None,
     dry_run: bool = True,
     preferred_filters: bool = True,
     recent_days: int | None = 1,
     ignore_duplicates: bool = False,
     use_template_alert: bool = False,
     max_evaluations: int | None = None,
+    max_matched_jobs_per_user: int | None = None,
 ) -> UserJobRunResult:
     profile = get_user_profile(whatsapp_number)
     if not profile:
@@ -178,30 +192,36 @@ async def run_user_job_search(
         raise ValueError("WhatsApp profile is incomplete.")
 
     search_queries = _build_search_queries(target_title)
-    evaluation_pool_limit = int(os.getenv("JOB_EVALUATION_POOL_LIMIT", str(max(limit, 15))))
-    target_pool_size = max_evaluations or evaluation_pool_limit
-    fetch_limit = max(limit, target_pool_size, 1)
+    threshold = threshold if threshold is not None else _int_env("MIN_MATCH_SCORE", 75)
+    max_matched_jobs_per_user = (
+        max_matched_jobs_per_user
+        if max_matched_jobs_per_user is not None
+        else _int_env("MAX_MATCHED_JOBS_PER_USER", 0)
+    )
+    evaluation_pool_limit = _int_env("JOB_EVALUATION_POOL_LIMIT", 0)
+    target_pool_size = max_evaluations if max_evaluations not in (None, 0) else evaluation_pool_limit
+    fetch_limit = max(limit, target_pool_size or 100, 100)
     scraped_jobs: list[JobListing] = []
     rapidapi_jobs: list[JobListing] = []
     seen_job_ids: set[str] = set()
     source_count = 0
-    for search_query in search_queries:
-        query_result = await fetch_jobs(
-            query=search_query,
-            location="India",
-            limit=fetch_limit,
-            preferred_filters=preferred_filters,
-            recent_days=recent_days,
-            include_rapidapi=False,
-        )
-        source_count = max(source_count, query_result.source_count)
-        for job in query_result.jobs:
-            if job.job_id in seen_job_ids:
-                continue
-            seen_job_ids.add(job.job_id)
-            scraped_jobs.append(job)
-        if len(scraped_jobs) >= target_pool_size:
-            break
+    primary_query = os.getenv("OFFICIAL_COMPANY_SEARCH_QUERY", "software engineer")
+    query_result = await fetch_jobs(
+        query=primary_query,
+        location="India",
+        limit=fetch_limit,
+        preferred_filters=preferred_filters,
+        recent_days=recent_days,
+        include_rapidapi=False,
+        include_official_sources=True,
+        apply_query_filter=False,
+    )
+    source_count = max(source_count, query_result.source_count)
+    for job in query_result.jobs:
+        if job.job_id in seen_job_ids:
+            continue
+        seen_job_ids.add(job.job_id)
+        scraped_jobs.append(job)
 
     if os.getenv("RAPIDAPI_KEY"):
         rapidapi_query = " OR ".join(search_queries[:5])
@@ -214,6 +234,7 @@ async def run_user_job_search(
             include_amazon=False,
             include_rapidapi=True,
             include_boards=False,
+            include_official_sources=False,
             apply_query_filter=False,
         )
         source_count += rapidapi_result.source_count
@@ -233,15 +254,14 @@ async def run_user_job_search(
             preferred_filters=preferred_filters,
             recent_days=recent_days,
             include_rapidapi=False,
+            include_official_sources=True,
         )
         source_count = max(source_count, query_result.source_count)
         scraped_jobs = query_result.jobs
 
     if rapidapi_jobs:
-        rapidapi_reserve = min(
-            len(rapidapi_jobs),
-            max(3, target_pool_size // 3),
-        )
+        reserve_basis = target_pool_size or len(rapidapi_jobs)
+        rapidapi_reserve = min(len(rapidapi_jobs), max(3, reserve_basis // 3))
         reserved_jobs = rapidapi_jobs[:rapidapi_reserve]
         remaining_jobs = [
             *scraped_jobs,
@@ -254,7 +274,7 @@ async def run_user_job_search(
         location="India",
         source_count=source_count,
         job_count=len(scraped_jobs),
-        jobs=scraped_jobs[:target_pool_size],
+        jobs=scraped_jobs if not target_pool_size else scraped_jobs[:target_pool_size],
     )
 
     job_ids = [job.job_id for job in scraped.jobs]
@@ -268,12 +288,13 @@ async def run_user_job_search(
     results: list[EvaluatedJob] = []
     alert_candidates: list[tuple[JobListing, JobMatchEvaluation]] = []
     lower_match_candidates: list[tuple[JobListing, JobMatchEvaluation]] = []
-    jobs_to_evaluate = fresh_jobs[:max_evaluations] if max_evaluations else fresh_jobs
-    fill_limit_with_lower_matches = (
-        os.getenv("FILL_DAILY_LIMIT_WITH_LOWER_MATCHES", "true").lower() == "true"
+    jobs_to_evaluate = (
+        fresh_jobs
+        if max_evaluations in (None, 0)
+        else fresh_jobs[:max_evaluations]
     )
-    send_all_above_threshold = (
-        os.getenv("SEND_ALL_ABOVE_THRESHOLD_MATCHES", "true").lower() == "true"
+    fill_limit_with_lower_matches = (
+        os.getenv("ALLOW_BELOW_THRESHOLD_FILL", "false").lower() == "true"
     )
 
     for job in jobs_to_evaluate:
@@ -328,18 +349,22 @@ async def run_user_job_search(
 
         alert_candidates.append((job, evaluation))
 
-    def sort_key(item: tuple[JobListing, JobMatchEvaluation]) -> tuple[bool, int, str]:
+    def sort_key(item: tuple[JobListing, JobMatchEvaluation]) -> tuple[int, float, int, int, str]:
+        job, evaluation = item
         return (
-            item[0].company.lower() != "amazon",
-            -_priority_score(item[0], item[1]),
-            item[0].title.lower(),
+            -evaluation.match_percentage,
+            -_posted_sort_value(job.posted_at),
+            _location_rank(job.location),
+            COMPANY_PRIORITY.get(job.company.lower(), 1000),
+            job.title.lower(),
         )
 
     alert_candidates.sort(key=sort_key)
     lower_match_candidates.sort(key=sort_key)
-    selected_alerts = (
-        alert_candidates if send_all_above_threshold else alert_candidates[:limit]
-    )
+    selected_alerts = alert_candidates
+    if max_matched_jobs_per_user and max_matched_jobs_per_user > 0:
+        selected_alerts = selected_alerts[:max_matched_jobs_per_user]
+
     if fill_limit_with_lower_matches and len(selected_alerts) < limit:
         selected_job_ids = {job.job_id for job, _ in selected_alerts}
         for job, evaluation in lower_match_candidates:

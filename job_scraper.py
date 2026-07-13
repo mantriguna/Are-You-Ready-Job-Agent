@@ -1,14 +1,17 @@
 import asyncio
+import hashlib
 import logging
 import os
 from collections.abc import Awaitable
 from datetime import UTC, datetime
 from html import unescape
 from re import findall, search, sub
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlparse, urlunparse
 
 import httpx
 from pydantic import BaseModel, Field, HttpUrl
+
+from company_sources import CompanySource, get_enabled_company_sources
 
 
 logger = logging.getLogger("ai-job-agent")
@@ -39,6 +42,65 @@ class JobSearchResult(BaseModel):
 def _csv_env(name: str) -> list[str]:
     raw_value = os.getenv(name, "")
     return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _normalize_url(value: str) -> str:
+    parsed = urlparse(value)
+    keep_params = {
+        "jobid",
+        "jobId",
+        "id",
+        "job_id",
+        "job",
+        "reqid",
+        "reqId",
+        "source",
+        "location",
+    }
+    query = urlencode(
+        [
+            (key, val)
+            for key, val in parse_qsl(parsed.query, keep_blank_values=True)
+            if key in keep_params
+        ]
+    )
+    return urlunparse(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            parsed.path.rstrip("/") or "/",
+            "",
+            query,
+            "",
+        )
+    )
+
+
+def _valid_https_url(value: str | None) -> bool:
+    if not value:
+        return False
+    parsed = urlparse(value)
+    return parsed.scheme == "https" and bool(parsed.netloc)
+
+
+def _job_dedupe_key(job: JobListing) -> str:
+    if job.url:
+        return _normalize_url(str(job.url))
+    return "|".join(
+        [
+            job.company.lower().strip(),
+            job.job_id.lower().strip(),
+            job.title.lower().strip(),
+            (job.location or "").lower().strip(),
+        ]
+    )
 
 
 def _clean_html(value: str | None) -> str:
@@ -86,10 +148,6 @@ def _looks_entry_level(job: JobListing) -> bool:
     text = f"{job.title} {job.description}".lower()
     title = job.title.lower()
     senior_title_markers = [
-        "sde-ii",
-        "sde ii",
-        "sde 2",
-        "software development engineer ii",
         "senior",
         "sr.",
         "sr ",
@@ -98,13 +156,16 @@ def _looks_entry_level(job: JobListing) -> bool:
         "manager",
         "level 5",
         "l5",
+        "staff",
+        "architect",
+        "director",
     ]
     if any(marker in title for marker in senior_title_markers):
         return False
 
     minimum_years = _minimum_required_years(text)
     if minimum_years is not None:
-        return minimum_years <= 3
+        return minimum_years <= 4
 
     entry_markers = ["sde-1", "sde i", "software development engineer i", "junior", "associate"]
     role_markers = [
@@ -166,9 +227,6 @@ def _passes_preferred_filters(job: JobListing, recent_days: int | None) -> bool:
         return False
 
     if not _looks_entry_level(job):
-        return False
-
-    if not _salary_matches_goal(job):
         return False
 
     if recent_days is not None and job.posted_at is not None:
@@ -276,51 +334,234 @@ async def _fetch_amazon_jobs(
     query: str | None,
     limit: int,
 ) -> list[JobListing]:
+    jobs: list[JobListing] = []
+    max_pages = _int_env("MAX_PAGES_PER_SOURCE", 0)
+    page_size = min(max(limit, 50), 100)
+    offset = 0
+    seen_ids: set[str] = set()
+
+    while True:
+        if max_pages and (offset // page_size) >= max_pages:
+            logger.warning("Amazon pagination stopped by MAX_PAGES_PER_SOURCE=%s", max_pages)
+            break
+
+        response = await client.get(
+            "https://www.amazon.jobs/en/search.json",
+            params={
+                "base_query": query or "software development engineer",
+                "loc_query": "India",
+                "country": "IND",
+                "sort": "recent",
+                "result_limit": page_size,
+                "offset": offset,
+            },
+            headers={"User-Agent": "AreYouReadyJobAgent/1.0", "Accept-Encoding": "identity"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        page_jobs = payload.get("jobs", [])
+        if not page_jobs:
+            break
+
+        new_on_page = 0
+        for item in page_jobs:
+            item_id = str(item.get("id") or "")
+            if not item_id or item_id in seen_ids:
+                continue
+            seen_ids.add(item_id)
+            new_on_page += 1
+            description = _clean_html(
+                " ".join(
+                    part
+                    for part in [
+                        item.get("description"),
+                        item.get("basic_qualifications"),
+                        item.get("preferred_qualifications"),
+                    ]
+                    if part
+                )
+            )
+            job_path = item.get("job_path")
+            job_url = f"https://www.amazon.jobs{job_path}" if job_path else item.get("url")
+            if not _valid_https_url(job_url):
+                continue
+            jobs.append(
+                JobListing(
+                    job_id=f"amazon:{item_id}",
+                    title=item.get("title", "Untitled job"),
+                    company="Amazon",
+                    location=item.get("normalized_location") or item.get("city"),
+                    description=description,
+                    url=_normalize_url(job_url),
+                    source="amazon",
+                    posted_at=_parse_amazon_posted_date(item.get("posted_date")),
+                    employment_type="Full Time",
+                    salary_text=None,
+                    salary_confidence="unknown",
+                )
+            )
+        if new_on_page == 0:
+            break
+        offset += page_size
+    return jobs
+
+
+def _workday_endpoint(source: CompanySource) -> tuple[str, str] | None:
+    parsed = urlparse(source.careers_url)
+    site = parsed.path.strip("/").split("/")[0]
+    if not parsed.netloc or not site:
+        return None
+    tenant = parsed.netloc.split(".")[0]
+    return f"https://{parsed.netloc}/wday/cxs/{tenant}/{site}/jobs", site
+
+
+async def _fetch_workday_jobs(
+    client: httpx.AsyncClient,
+    source: CompanySource,
+    query: str | None,
+) -> list[JobListing]:
+    endpoint = _workday_endpoint(source)
+    if not endpoint:
+        return []
+    url, site = endpoint
+    jobs: list[JobListing] = []
+    max_pages = _int_env("MAX_PAGES_PER_SOURCE", 0)
+    page_size = 20
+    offset = 0
+    seen_ids: set[str] = set()
+
+    while True:
+        if max_pages and (offset // page_size) >= max_pages:
+            logger.warning("%s pagination stopped by MAX_PAGES_PER_SOURCE=%s", source.company_name, max_pages)
+            break
+        payload = {
+            "appliedFacets": {"locations": ["India"]},
+            "limit": page_size,
+            "offset": offset,
+            "searchText": query or "software",
+        }
+        response = await client.post(
+            url,
+            json=payload,
+            headers={"User-Agent": "AreYouReadyJobAgent/1.0", "Accept": "application/json"},
+        )
+        response.raise_for_status()
+        data = response.json()
+        page_jobs = data.get("jobPostings") or data.get("jobs") or []
+        if not page_jobs:
+            break
+        new_on_page = 0
+        for item in page_jobs:
+            bullet_fields = item.get("bulletFields") or []
+            external_id = str(
+                (bullet_fields[0] if bullet_fields else None)
+                or item.get("externalPath")
+                or item.get("id")
+                or item.get("title")
+            )
+            if not external_id or external_id in seen_ids:
+                continue
+            seen_ids.add(external_id)
+            new_on_page += 1
+            external_path = item.get("externalPath")
+            if not external_path:
+                continue
+            job_url = urljoin(source.careers_url.rstrip("/") + "/", str(external_path))
+            if not _valid_https_url(job_url):
+                continue
+            title = item.get("title") or item.get("jobTitle") or "Untitled job"
+            location = item.get("locationsText") or item.get("location")
+            posted_at = None
+            posted = item.get("postedOn") or item.get("startDate")
+            if isinstance(posted, str):
+                try:
+                    posted_at = datetime.fromisoformat(posted.replace("Z", "+00:00"))
+                except ValueError:
+                    posted_at = None
+            jobs.append(
+                JobListing(
+                    job_id=f"workday:{source.company_name.lower()}:{external_id}",
+                    title=title,
+                    company=source.company_name,
+                    location=location,
+                    description=_clean_html(item.get("description") or item.get("jobDescription") or title),
+                    url=_normalize_url(job_url),
+                    source=f"workday:{site}",
+                    posted_at=posted_at,
+                    employment_type=item.get("timeType"),
+                    salary_confidence="unknown",
+                )
+            )
+        if new_on_page == 0:
+            break
+        offset += page_size
+    return jobs
+
+
+async def _fetch_generic_official_jobs(
+    client: httpx.AsyncClient,
+    source: CompanySource,
+    query: str | None,
+) -> list[JobListing]:
     response = await client.get(
-        "https://www.amazon.jobs/en/search.json",
-        params={
-            "base_query": query or "software development engineer",
-            "loc_query": "India",
-            "country": "IND",
-            "sort": "recent",
-            "result_limit": max(limit, 10),
-        },
-        headers={"User-Agent": "Mozilla/5.0", "Accept-Encoding": "identity"},
+        source.careers_url,
+        headers={"User-Agent": "AreYouReadyJobAgent/1.0", "Accept": "text/html,application/xhtml+xml"},
     )
     response.raise_for_status()
-    payload = response.json()
-
+    content_type = response.headers.get("content-type", "")
+    if "text/html" not in content_type and "application/xhtml" not in content_type:
+        return []
+    html = response.text[: int(os.getenv("HTTP_MAX_RESPONSE_CHARS", "2000000"))]
+    link_matches = findall(r"<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", html, flags=2)
     jobs: list[JobListing] = []
-    for item in payload.get("jobs", []):
-        description = _clean_html(
-            " ".join(
-                part
-                for part in [
-                    item.get("description"),
-                    item.get("basic_qualifications"),
-                    item.get("preferred_qualifications"),
-                ]
-                if part
-            )
-        )
-        job_path = item.get("job_path")
-        job_url = f"https://www.amazon.jobs{job_path}" if job_path else item.get("url")
+    seen_urls: set[str] = set()
+    query_terms = [term for term in (query or "software engineer").lower().split() if len(term) > 2]
+    for href, label_html in link_matches:
+        label = _clean_html(label_html)
+        combined = f"{label} {href}".lower()
+        if not any(term in combined for term in query_terms):
+            continue
+        if not any(marker in combined for marker in ["job", "career", "position", "software", "engineer", "developer", "sde"]):
+            continue
+        job_url = urljoin(source.careers_url, href)
+        parsed_job = urlparse(job_url)
+        if parsed_job.scheme != "https":
+            continue
+        if parsed_job.netloc.lower().removeprefix("www.") != source.domain.removeprefix("www."):
+            allowed = [domain.lower().removeprefix("www.") for domain in source.official_domains]
+            if parsed_job.netloc.lower().removeprefix("www.") not in allowed:
+                continue
+        normalized_url = _normalize_url(job_url)
+        if normalized_url in seen_urls:
+            continue
+        seen_urls.add(normalized_url)
+        stable_id = hashlib.sha256(normalized_url.encode("utf-8")).hexdigest()[:16]
         jobs.append(
             JobListing(
-                job_id=f"amazon:{item.get('id')}",
-                title=item.get("title", "Untitled job"),
-                company="Amazon",
-                location=item.get("normalized_location") or item.get("city"),
-                description=description,
-                url=job_url,
-                source="amazon",
-                posted_at=_parse_amazon_posted_date(item.get("posted_date")),
-                employment_type="Full Time",
-                salary_text=None,
-                salary_confidence="estimated_from_company_and_role",
+                job_id=f"official:{source.company_name.lower()}:{stable_id}",
+                title=label or source.company_name,
+                company=source.company_name,
+                location="India" if "india" in combined else None,
+                description=label,
+                url=normalized_url,
+                source="official_html",
+                salary_confidence="unknown",
             )
         )
     return jobs
+
+
+async def _fetch_company_source_jobs(
+    client: httpx.AsyncClient,
+    source: CompanySource,
+    query: str | None,
+    limit: int,
+) -> list[JobListing]:
+    if source.source_type == "amazon_json":
+        return await _fetch_amazon_jobs(client, query=query, limit=limit)
+    if source.source_type == "workday":
+        return await _fetch_workday_jobs(client, source, query=query)
+    return await _fetch_generic_official_jobs(client, source, query=query)
 
 
 async def _fetch_rapidapi_jobs(
@@ -389,6 +630,7 @@ async def fetch_jobs(
     include_amazon: bool | None = None,
     include_rapidapi: bool | None = None,
     include_boards: bool = True,
+    include_official_sources: bool | None = None,
     apply_query_filter: bool = True,
 ) -> JobSearchResult:
     greenhouse_boards = _csv_env("GREENHOUSE_BOARD_TOKENS") if include_boards else []
@@ -399,15 +641,29 @@ async def fetch_jobs(
         include_amazon = os.getenv("ENABLE_AMAZON_JOBS", "true").lower() == "true"
     if include_rapidapi is None:
         include_rapidapi = bool(os.getenv("RAPIDAPI_KEY"))
+    if include_official_sources is None:
+        include_official_sources = os.getenv("ENABLE_OFFICIAL_COMPANY_SOURCES", "true").lower() == "true"
     source_count = len(greenhouse_boards) + len(lever_companies) + len(ashby_boards)
-    if include_amazon:
+    official_sources = get_enabled_company_sources() if include_official_sources else []
+    if include_amazon and not include_official_sources:
         source_count += 1
+    source_count += len(official_sources)
     if include_rapidapi:
         source_count += 1
     tasks: list[tuple[str, Awaitable[list[JobListing]]]] = []
-    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-        if include_amazon:
+    timeout = _int_env("HTTP_TIMEOUT_SECONDS", 30)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        if include_amazon and not include_official_sources:
             tasks.append(("amazon", _fetch_amazon_jobs(client, query=query, limit=limit)))
+        if official_sources:
+            official_limit = max(limit, _int_env("JOB_SOURCE_BATCH_SIZE", 100), 50)
+            tasks.extend(
+                (
+                    f"official:{source.company_name}",
+                    _fetch_company_source_jobs(client, source, query=query, limit=official_limit),
+                )
+                for source in official_sources
+            )
         if include_rapidapi:
             tasks.append(("rapidapi", _fetch_rapidapi_jobs(client, query=query, limit=limit)))
         tasks.extend(
@@ -423,8 +679,15 @@ async def fetch_jobs(
             for board in ashby_boards
         )
 
+        concurrency = max(1, _int_env("JOB_SOURCE_CONCURRENCY", 5))
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def run_source(task: Awaitable[list[JobListing]]) -> list[JobListing]:
+            async with semaphore:
+                return await task
+
         results = await asyncio.gather(
-            *(task for _, task in tasks),
+            *(run_source(task) for _, task in tasks),
             return_exceptions=True,
         )
 
@@ -435,16 +698,23 @@ async def fetch_jobs(
             continue
         jobs.extend(result)
 
+    deduped_jobs: list[JobListing] = []
+    seen_keys: set[str] = set()
+    for job in jobs:
+        key = _job_dedupe_key(job)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped_jobs.append(job)
+
     filter_query = query if apply_query_filter else None
     filtered_jobs = [
-        job for job in jobs if _matches_filters(job, query=filter_query, location=location)
+        job for job in deduped_jobs if _matches_filters(job, query=filter_query, location=location)
     ]
     if preferred_filters:
         filtered_jobs = [
             job for job in filtered_jobs if _passes_preferred_filters(job, recent_days)
         ]
-    filtered_jobs = filtered_jobs[:limit]
-
     return JobSearchResult(
         query=query,
         location=location,
