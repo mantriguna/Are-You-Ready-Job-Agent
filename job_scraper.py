@@ -227,6 +227,17 @@ def _salary_matches_goal(job: JobListing) -> bool:
             "software engineer",
             "software development engineer",
             "backend",
+            "backend engineer",
+            "frontend engineer",
+            "full stack engineer",
+            "data engineer",
+            "devops engineer",
+            "platform engineer",
+            "site reliability",
+            "sre",
+            "cloud engineer",
+            "machine learning",
+            "ml engineer",
             "python developer",
             "java developer",
             "ai developer",
@@ -253,12 +264,14 @@ def _salary_matches_goal(job: JobListing) -> bool:
 
 
 def _passes_preferred_filters(job: JobListing, recent_days: int | None) -> bool:
-    location_text = f"{job.location or ''} {job.description}".lower()
-    if "india" not in location_text and ", ind" not in location_text:
+    if not _is_india_job(job):
         return False
 
     title_text = job.title.lower()
     if any(marker in title_text for marker in ["intern", "part time", "part-time"]):
+        return False
+
+    if not _salary_matches_goal(job):
         return False
 
     if not _looks_entry_level(job):
@@ -400,6 +413,25 @@ async def _fetch_ashby_board(
             )
         )
     return jobs
+
+
+async def _fetch_ashby_source(
+    client: httpx.AsyncClient,
+    source: CompanySource,
+) -> list[JobListing]:
+    board_name = source.source_key or source.domain.split(".")[0]
+    jobs = await _fetch_ashby_board(client, board_name)
+    normalized_jobs: list[JobListing] = []
+    for job in jobs:
+        updated = job.model_copy(
+            update={
+                "job_id": f"ashby:{source.company_name.lower()}:{job.job_id.split(':')[-1]}",
+                "company": source.company_name,
+            }
+        )
+        if _is_india_job(updated):
+            normalized_jobs.append(updated)
+    return normalized_jobs
 
 
 async def _fetch_amazon_jobs(
@@ -759,6 +791,8 @@ async def _fetch_company_source_jobs(
         return await _fetch_greenhouse_source(client, source)
     if source.source_type == "lever":
         return await _fetch_lever_source(client, source)
+    if source.source_type == "ashby":
+        return await _fetch_ashby_source(client, source)
     return await _fetch_generic_official_jobs(client, source, query=query)
 
 

@@ -175,3 +175,123 @@ sources:
     careers_url: https://www.zepto.com/s/careers
     source_type: generic_html
     priority: 54
+  - company_name: Stripe
+    careers_url: https://stripe.com/jobs
+    source_type: greenhouse
+    source_key: stripe
+    priority: 55
+  - company_name: Rubrik
+    careers_url: https://www.rubrik.com/company/careers
+    source_type: greenhouse
+    source_key: rubrik
+    priority: 56
+  - company_name: Databricks
+    careers_url: https://www.databricks.com/company/careers/open-positions
+    source_type: greenhouse
+    source_key: databricks
+    priority: 57
+  - company_name: Tekion
+    careers_url: https://tekion.com/careers
+    source_type: greenhouse
+    source_key: tekion
+    priority: 58
+  - company_name: Coinbase
+    careers_url: https://www.coinbase.com/careers
+    source_type: greenhouse
+    source_key: coinbase
+    priority: 59
+  - company_name: Okta
+    careers_url: https://www.okta.com/company/careers/
+    source_type: greenhouse
+    source_key: okta
+    priority: 60
+  - company_name: Zscaler
+    careers_url: https://www.zscaler.com/careers
+    source_type: greenhouse
+    source_key: zscaler
+    priority: 61
+  - company_name: Netskope
+    careers_url: https://www.netskope.com/company/careers/
+    source_type: greenhouse
+    source_key: netskope
+    priority: 62
+  - company_name: MongoDB
+    careers_url: https://www.mongodb.com/careers
+    source_type: greenhouse
+    source_key: mongodb
+    priority: 63
+  - company_name: Elastic
+    careers_url: https://www.elastic.co/careers
+    source_type: greenhouse
+    source_key: elastic
+    priority: 64
+  - company_name: Twilio
+    careers_url: https://www.twilio.com/en-us/company/jobs
+    source_type: greenhouse
+    source_key: twilio
+    priority: 65
+  - company_name: GitLab
+    careers_url: https://about.gitlab.com/jobs/
+    source_type: greenhouse
+    source_key: gitlab
+    priority: 66
+  - company_name: Figma
+    careers_url: https://www.figma.com/careers/
+    source_type: greenhouse
+    source_key: figma
+    priority: 67
+  - company_name: Instabase
+    careers_url: https://www.instabase.com/careers/
+    source_type: greenhouse
+    source_key: instabase
+    priority: 68
+  - company_name: Datadog
+    careers_url: https://www.datadoghq.com/careers/
+    source_type: greenhouse
+    source_key: datadog
+    priority: 69
+  - company_name: Cloudflare
+    careers_url: https://www.cloudflare.com/careers/jobs/
+    source_type: greenhouse
+    source_key: cloudflare
+    priority: 70
+  - company_name: Sumo Logic
+    careers_url: https://www.sumologic.com/company/careers/
+    source_type: greenhouse
+    source_key: sumologic
+    priority: 71
+  - company_name: New Relic
+    careers_url: https://newrelic.com/careers
+    source_type: greenhouse
+    source_key: newrelic
+    priority: 72
+  - company_name: Pure Storage
+    careers_url: https://www.purestorage.com/company/careers.html
+    source_type: greenhouse
+    source_key: purestorage
+    priority: 73
+  - company_name: InMobi
+    careers_url: https://www.inmobi.com/company/careers/
+    source_type: greenhouse
+    source_key: inmobi
+    priority: 74
+  - company_name: Snowflake
+    careers_url: https://careers.snowflake.com/us/en
+    source_type: ashby
+    source_key: snowflake
+    priority: 75
+  - company_name: Confluent
+    careers_url: https://www.confluent.io/careers/
+    source_type: ashby
+    source_key: confluent
+    priority: 76
+  - company_name: Notion
+    careers_url: https://www.notion.com/careers
+    source_type: ashby
+    source_key: notion
+    priority: 77
+  - company_name: Zapier
+    careers_url: https://zapier.com/jobs
+    source_type: ashby
+    source_key: zapier
+    priority: 78
