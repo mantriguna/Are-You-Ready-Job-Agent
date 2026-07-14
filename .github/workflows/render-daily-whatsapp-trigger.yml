@@ -33,4 +33,4 @@ jobs:
           echo
           sleep 10
           curl --fail --show-error --silent \
-            "https://are-you-ready-job-agent.onrender.com/cron/daily-whatsapp?token=${CRON_SECRET}&limit=15&max_evaluations=0&min_match_score=75&max_matched_jobs_per_user=0&recent_days=1"
+            "https://are-you-ready-job-agent.onrender.com/cron/daily-whatsapp?token=${CRON_SECRET}&limit=15&max_evaluations=0&min_match_score=75&max_matched_jobs_per_user=0&recent_days=1&force=true"
