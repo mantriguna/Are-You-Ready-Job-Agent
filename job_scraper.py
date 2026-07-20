@@ -135,9 +135,11 @@ def _is_india_text(value: str | None) -> bool:
     if not value:
         return False
     text = value.lower()
+    if search(r"\bindia\b", text):
+        return True
+    if search(r"(^|[\s,(/-])ind($|[\s,)./-])", text):
+        return True
     india_markers = [
-        "india",
-        ", ind",
         "bengaluru",
         "bangalore",
         "hyderabad",
@@ -153,8 +155,6 @@ def _is_india_text(value: str | None) -> bool:
         "maharashtra",
         "uttar pradesh",
         "haryana",
-        "remote - india",
-        "remote india",
     ]
     return any(marker in text for marker in india_markers)
 

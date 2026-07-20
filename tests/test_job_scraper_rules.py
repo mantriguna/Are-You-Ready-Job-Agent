@@ -108,6 +108,19 @@ class JobScraperRulesTest(unittest.TestCase):
 
         self.assertFalse(_is_india_job(job))
 
+    def test_india_filter_does_not_match_indonesia(self) -> None:
+        job = JobListing(
+            job_id="greenhouse:agoda:123",
+            title="Backend Software Engineer",
+            company="Agoda",
+            location="Bali, Indonesia",
+            description="Backend platform role.",
+            url="https://job-boards.greenhouse.io/agoda/jobs/123",
+            source="greenhouse",
+        )
+
+        self.assertFalse(_is_india_job(job))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -122,6 +122,22 @@ DEFAULT_COMPANY_SOURCES: list[CompanySource] = [
     CompanySource("Confluent", "https://www.confluent.io/careers/", priority=76, source_type="ashby", source_key="confluent", official_domains=["confluent.io"]),
     CompanySource("Notion", "https://www.notion.com/careers", priority=77, source_type="ashby", source_key="notion", official_domains=["notion.com"]),
     CompanySource("Zapier", "https://zapier.com/jobs", priority=78, source_type="ashby", source_key="zapier", official_domains=["zapier.com"]),
+    CompanySource("HackerRank", "https://www.hackerrank.com/careers/", priority=79, source_type="greenhouse", source_key="hackerrank", official_domains=["hackerrank.com"]),
+    CompanySource("ZoomInfo", "https://www.zoominfo.com/careers", priority=80, source_type="greenhouse", source_key="zoominfo", official_domains=["zoominfo.com"]),
+    CompanySource("Bloomreach", "https://www.bloomreach.com/en/about/careers", priority=81, source_type="greenhouse", source_key="bloomreach", official_domains=["bloomreach.com"]),
+    CompanySource("LogicMonitor", "https://www.logicmonitor.com/careers", priority=82, source_type="greenhouse", source_key="logicmonitor", official_domains=["logicmonitor.com"]),
+    CompanySource("ClickHouse", "https://clickhouse.com/company/careers", priority=83, source_type="greenhouse", source_key="clickhouse", official_domains=["clickhouse.com"]),
+    CompanySource("Adyen", "https://careers.adyen.com", priority=84, source_type="greenhouse", source_key="adyen", official_domains=["careers.adyen.com", "adyen.com"]),
+    CompanySource("Observe.AI", "https://www.observe.ai/careers", priority=85, source_type="greenhouse", source_key="observeai", official_domains=["observe.ai"]),
+    CompanySource("Yugabyte", "https://www.yugabyte.com/careers", priority=86, source_type="greenhouse", source_key="yugabyte", official_domains=["yugabyte.com"]),
+    CompanySource("Truecaller", "https://www.truecaller.com/careers", priority=87, source_type="greenhouse", source_key="truecaller", official_domains=["truecaller.com"]),
+    CompanySource("Agoda", "https://careersatagoda.com", priority=88, source_type="greenhouse", source_key="agoda", official_domains=["careersatagoda.com", "agoda.com"]),
+    CompanySource("Druva", "https://www.druva.com/about/careers/", priority=89, source_type="greenhouse", source_key="druva", official_domains=["druva.com"]),
+    CompanySource("FourKites", "https://www.fourkites.com/careers/", priority=90, source_type="greenhouse", source_key="fourkites", official_domains=["fourkites.com"]),
+    CompanySource("Zeta", "https://www.zeta.tech/careers", priority=91, source_type="lever", source_key="zeta", official_domains=["zeta.tech"]),
+    CompanySource("Paytm", "https://paytm.com/careers", priority=92, source_type="lever", source_key="paytm", official_domains=["paytm.com"]),
+    CompanySource("Sophos", "https://www.sophos.com/en-us/careers", priority=93, source_type="lever", source_key="sophos", official_domains=["sophos.com"]),
+    CompanySource("Atlan", "https://atlan.com/careers", priority=94, source_type="ashby", source_key="atlan", official_domains=["atlan.com"]),
 ]
 
 

@@ -295,3 +295,83 @@ sources:
     source_type: ashby
     source_key: zapier
     priority: 78
+  - company_name: HackerRank
+    careers_url: https://www.hackerrank.com/careers/
+    source_type: greenhouse
+    source_key: hackerrank
+    priority: 79
+  - company_name: ZoomInfo
+    careers_url: https://www.zoominfo.com/careers
+    source_type: greenhouse
+    source_key: zoominfo
+    priority: 80
+  - company_name: Bloomreach
+    careers_url: https://www.bloomreach.com/en/about/careers
+    source_type: greenhouse
+    source_key: bloomreach
+    priority: 81
+  - company_name: LogicMonitor
+    careers_url: https://www.logicmonitor.com/careers
+    source_type: greenhouse
+    source_key: logicmonitor
+    priority: 82
+  - company_name: ClickHouse
+    careers_url: https://clickhouse.com/company/careers
+    source_type: greenhouse
+    source_key: clickhouse
+    priority: 83
+  - company_name: Adyen
+    careers_url: https://careers.adyen.com
+    source_type: greenhouse
+    source_key: adyen
+    priority: 84
+  - company_name: Observe.AI
+    careers_url: https://www.observe.ai/careers
+    source_type: greenhouse
+    source_key: observeai
+    priority: 85
+  - company_name: Yugabyte
+    careers_url: https://www.yugabyte.com/careers
+    source_type: greenhouse
+    source_key: yugabyte
+    priority: 86
+  - company_name: Truecaller
+    careers_url: https://www.truecaller.com/careers
+    source_type: greenhouse
+    source_key: truecaller
+    priority: 87
+  - company_name: Agoda
+    careers_url: https://careersatagoda.com
+    source_type: greenhouse
+    source_key: agoda
+    priority: 88
+  - company_name: Druva
+    careers_url: https://www.druva.com/about/careers/
+    source_type: greenhouse
+    source_key: druva
+    priority: 89
+  - company_name: FourKites
+    careers_url: https://www.fourkites.com/careers/
+    source_type: greenhouse
+    source_key: fourkites
+    priority: 90
+  - company_name: Zeta
+    careers_url: https://www.zeta.tech/careers
+    source_type: lever
+    source_key: zeta
+    priority: 91
+  - company_name: Paytm
+    careers_url: https://paytm.com/careers
+    source_type: lever
+    source_key: paytm
+    priority: 92
+  - company_name: Sophos
+    careers_url: https://www.sophos.com/en-us/careers
+    source_type: lever
+    source_key: sophos
+    priority: 93
+  - company_name: Atlan
+    careers_url: https://atlan.com/careers
+    source_type: ashby
+    source_key: atlan
+    priority: 94
